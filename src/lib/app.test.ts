@@ -135,6 +135,37 @@ describe('App on the synthetic vault', () => {
     expect(fake.writes).toHaveLength(1);
   });
 
+  it('says what became of a capture: created, waiting, or not taken', async () => {
+    const fake = new FakeSource();
+    const app = new App(deps(fake));
+    await app.start(null);
+    await app.capture({ area: 'garden', title: 'Taken at once', context: '' });
+    expect(app.notice).toMatchObject({ key: 'capture.created', tone: 'info' });
+    fake.offline = true;
+    await app.refresh();
+    await app.capture({ area: 'garden', title: 'Offline', context: '' });
+    expect(app.notice).toMatchObject({ key: 'capture.queued', tone: 'info' });
+    fake.offline = false;
+    await app.refresh();
+    fake.loseNextAnswer = true;
+    await app.capture({ area: 'garden', title: 'Lost', context: '' });
+    expect(app.notice).toMatchObject({ key: 'capture.not_taken', tone: 'error' });
+  });
+
+  it('clears an error once the hub answered in full', async () => {
+    const fake = new FakeSource();
+    const app = new App(deps(fake));
+    await app.start(null);
+    await app.capture({ area: 'garden', title: 'x', context: '' });
+    await app.answer(app.view!.tasks.find((t) => t.id === 'garden/choose-a-fence')!, 'q1', 1);
+    app.notice = { key: 'error.shape', tone: 'error' };
+    await app.refresh();
+    expect(app.notice).toBeNull();
+    app.notice = { key: 'capture.created', params: { title: 'x' }, tone: 'info' };
+    await app.refresh();
+    expect(app.notice?.key).toBe('capture.created');
+  });
+
   it('refuses a capture with problems, and names them', async () => {
     const app = new App(deps(new FakeSource()));
     await app.start(null);

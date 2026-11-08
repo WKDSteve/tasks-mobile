@@ -3,7 +3,7 @@
 
 import { checkDraft, type Draft, type DraftProblem } from './capture';
 import { ShapeError } from './parse';
-import { WriteQueue, type QueueStore } from './queue';
+import { WriteQueue, type Pending, type QueueStore } from './queue';
 import { allows, DEFAULT_RIGHTS, type Right } from './rights';
 import { HubRefused, Unpaired, Unreachable, type DataSource } from './source';
 import type { KeptView, TokenStorage } from './storage';
@@ -197,6 +197,8 @@ export class App {
       this.view = view;
       this.viewAt = this.deps.now().toISOString();
       this.connection = 'live';
+      // An error said before is over once the hub answered in full; a word of information stays.
+      if (this.notice?.tone === 'error') this.notice = null;
       await this.deps.viewStore.save({ view, at: this.viewAt });
     } catch (error) {
       this.failed(error);
@@ -218,18 +220,18 @@ export class App {
   }
 
   /** Queue a write and try to send it now; the list changes only with the hub's answer (MOB-07). */
-  private async enqueue(op: Op, area: string, label: string): Promise<boolean> {
+  private async enqueue(op: Op, area: string, label: string): Promise<Pending | null> {
     if (!allows(this.rights, op)) {
       this.notice = { key: 'task.not_allowed', tone: 'error' };
-      return false;
+      return null;
     }
     if (this.queue.full) {
       this.notice = { key: 'queue.full', tone: 'error' };
-      return false;
+      return null;
     }
-    await this.queue.add(op, area, label);
+    const item = await this.queue.add(op, area, label);
     if (this.source && this.connection !== 'offline') await this.refresh();
-    return true;
+    return item;
   }
 
   async capture(draft: Draft): Promise<boolean> {
@@ -241,9 +243,15 @@ export class App {
     this.problems = [];
     this.busy = true;
     try {
-      const queued = await this.enqueue(checked.op, checked.op.area, checked.op.title);
-      if (queued) this.notice = { key: 'capture.queued', params: { title: checked.op.title }, tone: 'info' };
-      return queued;
+      const item = await this.enqueue(checked.op, checked.op.area, checked.op.title);
+      if (!item) return false;
+      // Say what became of it: taken by the engine (gone from the queue), still waiting, or not taken.
+      const left = this.queue.items.find((i) => i.clientOpId === item.clientOpId);
+      const params = { title: checked.op.title };
+      if (!left) this.notice = { key: 'capture.created', params, tone: 'info' };
+      else if (left.state === 'waiting' || left.state === 'sending') this.notice = { key: 'capture.queued', params, tone: 'info' };
+      else this.notice = { key: 'capture.not_taken', params, tone: 'error' };
+      return true;
     } finally {
       this.busy = false;
     }

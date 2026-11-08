@@ -127,6 +127,34 @@ describe('WriteQueue', () => {
     expect((await first).sent).toBe(1);
   });
 
+  it('does not send a write that was dropped, or cleared, while an earlier one was on its way', async () => {
+    for (const how of ['drop', 'clear'] as const) {
+      const q = new WriteQueue(memory(), ids, clock);
+      await q.add(NEW, 'garden', 'A');
+      const second = await q.add({ op: 'new', area: 'garden', title: 'B' }, 'garden', 'B');
+      let release!: () => void;
+      const gate = new Promise<void>((r) => (release = r));
+      const sent: string[] = [];
+      const slow: DataSource = {
+        ...source([]),
+        write: async (id) => {
+          sent.push(id);
+          await gate;
+          return { ok: true, id: 'garden/x' };
+        },
+      };
+      const run = q.flush(slow);
+      await Promise.resolve();
+      await new Promise((r) => setTimeout(r, 0));
+      if (how === 'drop') await q.drop(second.clientOpId);
+      else await q.clear();
+      release();
+      await run;
+      expect(sent, how).toHaveLength(1);
+      expect(sent, how).not.toContain(second.clientOpId);
+    }
+  });
+
   it('survives the end of the app: kept after every change, sending becomes unknown (MUI-04)', async () => {
     const store = memory();
     const q = new WriteQueue(store, ids, clock);

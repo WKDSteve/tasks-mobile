@@ -135,6 +135,8 @@ export class WriteQueue {
     let sent = 0;
     try {
       for (const item of this.items.filter((i) => i.state === 'waiting')) {
+        // Dropped or cleared while an earlier write was on its way: it is not sent.
+        if (!this.items.includes(item) || item.state !== 'waiting') continue;
         item.state = 'sending';
         await this.persist();
         try {
