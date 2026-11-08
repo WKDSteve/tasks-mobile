@@ -1,6 +1,8 @@
 /* The page on a phone. Every colour comes from the kit's tokens; every control is at least 48 px high and wide
    (MUI-02); the page keeps clear of the notch and the gesture bar (safe-area insets). */
 @import 'appkit-ui/tokens.css';
+/* The colors of the tasks family over the kit's (written by the app-icons tool, never by hand). */
+@import './palette.css';
 
 *,
 *::before,

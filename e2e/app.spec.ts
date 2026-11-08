@@ -192,6 +192,35 @@ test('the main views pass axe', async ({ page }) => {
   }
 });
 
+test('the icons and colors of the manifest are those of the app-icons tool, and every icon is served (PWA-07)', async ({ page }) => {
+  await open(page);
+  const manifest = await page.evaluate(async () => (await fetch('./manifest.webmanifest')).json());
+  // Android needs an icon of 192 and of 512 px for each purpose; the colors are the dark ground of the tasks palette.
+  for (const purpose of ['any', 'maskable', 'monochrome']) {
+    const sizes = manifest.icons.filter((i: { purpose: string }) => i.purpose === purpose).map((i: { sizes: string }) => i.sizes);
+    expect(sizes, purpose).toEqual(expect.arrayContaining(['any', '192x192', '512x512']));
+  }
+  expect(manifest.theme_color).toBe('#101513');
+  expect(manifest.background_color).toBe('#101513');
+  const links = await page.evaluate(() =>
+    [...document.querySelectorAll('link[rel="icon"], link[rel="apple-touch-icon"]')].map((l) => l.getAttribute('href')),
+  );
+  for (const src of [...manifest.icons.map((i: { src: string }) => i.src), ...links]) {
+    const served = await page.evaluate(async (s) => {
+      const r = await fetch(s);
+      return { ok: r.ok, type: r.headers.get('content-type') };
+    }, src);
+    expect(served.ok, src).toBe(true);
+    expect(served.type, src).toBe(src.endsWith('.png') ? 'image/png' : 'image/svg+xml');
+  }
+  // The page's colors come from the palette: the accent is the green of the icon, not the kit's blue.
+  const accent = () => page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--accent').trim());
+  await page.emulateMedia({ colorScheme: 'light' });
+  expect(await accent()).toBe('#0f6e56');
+  await page.emulateMedia({ colorScheme: 'dark' });
+  expect(await accent()).toBe('#5dcaa5');
+});
+
 test('installable: manifest with a share target, a service worker that keeps no route of the hub (PWA-02, PWA-07)', async ({ page }) => {
   await open(page);
   const manifest = await page.evaluate(async () => (await fetch('./manifest.webmanifest')).json());
