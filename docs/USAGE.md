@@ -1,7 +1,7 @@
 # Using tasks-mobile on a phone
 
-> **Not yet possible.** This describes how it works once the hub of tasks-desktop serves the page under `/m/`
-> ([HUB.md](HUB.md)). Until then nothing here reaches a page.
+> Needs a tasks-desktop from its rolling build `latest` on (it serves this page under `/m/`). Not yet tried on a real
+> phone: tell what does not work as written here.
 
 ## 1. The tunnel
 

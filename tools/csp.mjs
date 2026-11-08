@@ -1,8 +1,8 @@
 // The policy the page is tested under: the one appkit's hub sets on every page it serves (`shell_policy` in
 // appkit-hub/src/guard.rs), plus what an installable page needs: `manifest-src`, `worker-src`, and a second Trusted
 // Types policy, `tasks-mobile-worker`, which turns exactly one string into a script URL: the address of the service
-// worker (`src/lib/worker.ts`). The hub has to add these when it serves this page (docs/HUB.md); until then the e2e
-// tests hold the page to this.
+// worker (`src/lib/worker.ts`). The hub adds exactly these under `/m/` (appkit v0.40.0,
+// `GuardRules::with_installable_page`); tasks-desktop's browser test checks the real header.
 
 export const POLICY = [
   "default-src 'none'",

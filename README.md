@@ -9,9 +9,11 @@ reached through the hub of tasks-desktop on your PC; this page shows what the hu
 
 ## State
 
-**Not usable on a phone yet.** The page is built and tested, but the hub of tasks-desktop does not serve it yet: that
-is the next step ([docs/HUB.md](docs/HUB.md) says what the hub has to do). Until then the page runs on a synthetic
-vault in a browser (`pnpm dev`), which is how it is tested.
+The hub of tasks-desktop serves this page under `/m/` from its rolling build
+[`latest`](https://github.com/WKDSteve/tasks-desktop/releases/tag/latest) on (the commit of tasks-mobile it carries is
+pinned in its `mobile.lock`); the way in is an SSH tunnel to the PC ([docs/USAGE.md](docs/USAGE.md)). Not checked on a
+real phone yet. What the hub still has to do (filter by class for the phone, devices, Tailscale) is in
+[docs/HUB.md](docs/HUB.md). For working on the page, `pnpm dev` runs it on a synthetic vault in a browser.
 
 What is there:
 

@@ -51,9 +51,10 @@ keys first (appkit, plan "Mobile Basis").
 ## The page
 
 - Served under the hub's policy: `default-src 'none'`, scripts and styles from the origin only, no inline, Trusted
-  Types required. The page needs three additions the hub has to make for it: `manifest-src 'self'`,
-  `worker-src 'self'`, and the Trusted Types policy `tasks-mobile-worker`, which turns exactly one string into a
-  script URL, the address of the service worker (`src/lib/worker.ts`). See [docs/HUB.md](docs/HUB.md).
+  Types required. Under `/m/` only, the hub adds three things for this page (appkit's
+  `GuardRules::with_installable_page`): `manifest-src 'self'`, `worker-src 'self'`, and the Trusted Types policy
+  `tasks-mobile-worker`, which turns exactly one string into a script URL, the address of the service worker
+  (`src/lib/worker.ts`). The desktop page keeps its policy. See [docs/HUB.md](docs/HUB.md).
 - The browser tests run the page under exactly that policy and fail on any console error or warning (MTST-06).
 - No tracking, no analytics, no third-party SDK, no request to any other host (MSEC-09).
 

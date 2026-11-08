@@ -3,7 +3,10 @@
 The page is built here (`pnpm build` makes `dist/`); the hub of tasks-desktop serves it. These are the steps on the
 hub's side, in the order they unlock things on the phone.
 
-## 1. Serve the page under `/m/` (makes the page usable over the SSH tunnel)
+## 1. Serve the page under `/m/` (makes the page usable over the SSH tunnel) — done
+
+Done in tasks-desktop (its `mobile.lock`, `tools/build-mobile.py`, `crates/tasks-hub/build.rs`) on appkit v0.40.0
+(`GuardRules::with_installable_page("/m", "tasks-mobile-worker")`). What it does:
 
 - Embed `dist/` of a pinned commit of tasks-mobile in the binary (like the desktop page, SRV-20), served under `/m/`.
   The page uses relative addresses, so it works below `/m/` as built.
