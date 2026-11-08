@@ -2,6 +2,8 @@
   "name": "tasks mobile",
   "short_name": "tasks",
   "description": "Capture a task on the way and go through the vault of tasks-desktop.",
+  "lang": "en",
+  "dir": "ltr",
   "id": "./",
   "start_url": "./",
   "scope": "./",

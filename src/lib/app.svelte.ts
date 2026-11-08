@@ -7,7 +7,7 @@ import { WriteQueue, type Pending, type QueueStore } from './queue';
 import { allows, DEFAULT_RIGHTS, type Right } from './rights';
 import { HubRefused, Unpaired, Unreachable, type DataSource } from './source';
 import type { KeptView, TokenStorage } from './storage';
-import { readToken, writeToken } from './storage';
+import { isFresh, readToken, writeToken } from './storage';
 import type { CacheStore } from 'appkit-ui/cache';
 import type { DonePreview, Op, Status, TaskBrief, TaskDetail, VaultView } from './types';
 import type { TextKey } from './i18n';
@@ -85,7 +85,12 @@ export class App {
    * the code taken out of the address (`takePairingCode`), if the page was opened with one.
    */
   async start(pairingCode: string | null): Promise<void> {
-    const kept = await this.deps.viewStore.load();
+    let kept = await this.deps.viewStore.load();
+    if (kept && !isFresh(kept, this.deps.now())) {
+      // Too old to stand for the vault: gone, not shown (MOB-08, MSEC-12).
+      await this.deps.viewStore.clear();
+      kept = null;
+    }
     if (kept) {
       this.view = kept.view;
       this.viewAt = kept.at;

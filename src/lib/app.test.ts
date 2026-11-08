@@ -187,6 +187,33 @@ describe('App on the synthetic vault', () => {
   });
 });
 
+describe('the kept list (MOB-08)', () => {
+  it('shows a kept list offline, with its time, while it is young enough', async () => {
+    const fake = new FakeSource();
+    fake.offline = true;
+    const d = deps(fake);
+    d.views.value = { at: '2025-12-25T00:00:00Z', view: { rev: 'r', tasks: [], areas: [{ name: 'garden', dataClass: 'public' }], hiddenAreas: 0 } };
+    const app = new App(d);
+    await app.start(null);
+    expect(app.connection).toBe('offline');
+    expect(app.viewAt).toBe('2025-12-25T00:00:00Z');
+    expect(app.view?.areas).toHaveLength(1);
+  });
+
+  it('deletes a kept list that is too old, or from the future, instead of showing it', async () => {
+    for (const at of ['2025-12-01T00:00:00Z', '2026-02-01T00:00:00Z', 'yesterday']) {
+      const fake = new FakeSource();
+      fake.offline = true;
+      const d = deps(fake);
+      d.views.value = { at, view: { rev: 'r', tasks: [], areas: [], hiddenAreas: 0 } };
+      const app = new App(d);
+      await app.start(null);
+      expect(app.view, at).toBeNull();
+      expect(d.views.value, at).toBeNull();
+    }
+  });
+});
+
 describe('pairing', () => {
   it('reads the code from a link or as it is', () => {
     const code = 'a'.repeat(32);

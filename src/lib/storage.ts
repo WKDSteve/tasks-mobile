@@ -54,6 +54,17 @@ export function restoreView(raw: unknown): KeptView | null {
   return { at: r['at'], view: { rev: view['rev'].slice(0, 200), tasks, areas, hiddenAreas: hidden } };
 }
 
+/** How long a kept list is shown without the hub (MOB-08): after that it is deleted, not shown as if it still held. */
+export const MAX_KEPT_MS = 14 * 24 * 60 * 60 * 1000;
+
+/** Is the kept list young enough to show? A time that cannot be read, or one in the future, is not. */
+export function isFresh(kept: KeptView, now: Date): boolean {
+  const at = Date.parse(kept.at);
+  if (Number.isNaN(at)) return false;
+  const age = now.getTime() - at;
+  return age >= -5 * 60 * 1000 && age <= MAX_KEPT_MS;
+}
+
 function isKept(value: unknown): value is KeptView {
   return restoreView(value) !== null;
 }

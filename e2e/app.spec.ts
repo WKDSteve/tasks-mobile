@@ -185,6 +185,8 @@ test('installable: manifest with a share target, a service worker that keeps no 
   await open(page);
   const manifest = await page.evaluate(async () => (await fetch('./manifest.webmanifest')).json());
   expect(manifest.display).toBe('standalone');
+  expect(manifest.lang).toBe('en');
+  expect(manifest.scope).toBe('./');
   expect(manifest.share_target.params).toEqual({ title: 'share_title', text: 'share_text', url: 'share_url' });
   await page.waitForFunction(async () => (await navigator.serviceWorker.getRegistration()) !== undefined);
   await page.waitForFunction(async () => (await navigator.serviceWorker.ready).active !== null);
