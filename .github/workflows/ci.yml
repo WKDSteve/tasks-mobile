@@ -1,0 +1,52 @@
+# CI of tasks-mobile.
+#
+# Runs on the maintainer's self-hosted Windows runner (`runs-on: [self-hosted, windows]`), like tasks-desktop. Only
+# pushes to main of this repository start it: there is no `pull_request` trigger on purpose, because a pull request
+# (from a fork, too) would run its own workflow with the maintainer's rights on that machine. Without a running runner a
+# push stays "Queued".
+#
+# Tools (node, pnpm, python, Chrome) are expected on the PATH and not pinned here; the job prints their versions. The
+# browser tests use the system's Chrome (`channel: 'chrome'`), nothing is downloaded.
+
+name: ci
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# `shell: bash` resolves to the WSL launcher on this machine; Git Bash is named explicitly, in 8.3 form because the
+# shell string is split at spaces.
+defaults:
+  run:
+    shell: C:\PROGRA~1\Git\bin\bash.exe --noprofile --norc -e -o pipefail {0}
+
+jobs:
+  page:
+    runs-on: [self-hosted, windows]
+    timeout-minutes: 20
+    steps:
+      # Actions are pinned by commit; the comment names the tag.
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0 (node24)
+        with:
+          persist-credentials: false
+      - run: node --version && pnpm --version && python --version
+      - name: Install (frozen lockfile, the quarantine of pnpm-workspace.yaml)
+        run: pnpm install --frozen-lockfile
+      - name: No control characters in tracked text files
+        run: python tools/check-control-chars.py
+      - name: The service worker is valid JavaScript (it is outside the bundler)
+        run: node --check public/sw.js
+      - name: Types
+        run: pnpm check
+      - name: Unit tests
+        run: pnpm test
+      - name: Both builds, then the page in Chrome under the hub's CSP
+        run: pnpm e2e
