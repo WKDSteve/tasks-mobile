@@ -9,13 +9,21 @@ today an SSH tunnel with the same port on both ends, so the phone's browser spea
 the origin the hub allows. Later also Tailscale Serve; that needs the hub to know the tailnet origin and per-device
 keys first (appkit, plan "Mobile Basis").
 
-## Session
+## Device key and session (MOB-04, PWA-03)
 
-- Pairing with the one-time code of `tasks-hub open` (`#pair=<code>`, in the fragment, taken out of the address at
-  once; or pasted into the field). The code is traded for a session token.
-- The token lives in `sessionStorage` of the tab only, never in IndexedDB, a cookie, the address or a log (WEB-07).
-  Closing the app ends the session; pair again. A per-device key that can be revoked one by one (MOB-04) is the
-  hub's next step, not this page's.
+- Pairing happens once, with the one-time code of `tasks-hub open` (`#pair=<code>`, in the fragment, taken out of the
+  address at once; or pasted into the field). The page makes an ECDSA P-256 key pair that WebCrypto keeps
+  non-extractable and sends the public half with the code and a name (`appkit-ui/device`, hub side `devices.rs` of
+  appkit). It keeps the device id and the key pair in IndexedDB of its origin: a script of the page can sign with the
+  key, nobody can read it out or copy it.
+- Every start signs a challenge of the hub together with the origin and gets a fresh session; a hub that restarted is
+  answered the same way, without the pairing screen. The session token lives in memory only, never in storage, a
+  cookie, the address or a log.
+- The PC revokes a device (control secret); the page then shows the pairing screen and says the device was
+  disconnected. "Disconnect and delete the data" on the phone forgets the key there; the PC keeps the device in its
+  list until it is revoked there.
+- A hub that does not know devices yet takes the code the old way (`/auth/exchange`): the session then ends with the
+  page.
 - Every request carries the token as a bearer header; no cookie, no cache, no referrer.
 
 ## Data classes (MOB-02, MSEC-12)
@@ -28,7 +36,7 @@ keys first (appkit, plan "Mobile Basis").
   stores them, but they cross the wire.
 - What is kept on the phone: the last list (shown areas only) and the queue of writes, in IndexedDB of the page's
   origin. Both are read back as untrusted and checked field by field (MSEC-13). "Disconnect and delete the data"
-  removes the session, the list and the queue.
+  removes the device key, the list and the queue.
 - The service worker keeps the page itself (HTML, script, style, icons), never a route of the hub (PWA-02).
 
 ## Text from the vault and from other apps
@@ -45,8 +53,8 @@ keys first (appkit, plan "Mobile Basis").
 - A write whose answer was lost is never sent again by itself (a second `new` would make a second task); the page
   asks (MOB-09).
 - The rights a phone has (read, create, change; never trigger) decide what the page offers. They are **not a
-  protection** yet: the hub does not know devices, so a session can do what the hub allows any session. The levels
-  per device are enforced by the hub once appkit has them (MOB-03).
+  protection** yet: the hub knows the device of a session, but does not hold it to rights per device yet; a session
+  can do what the hub allows any session (MOB-03, next step in appkit).
 
 ## The page
 

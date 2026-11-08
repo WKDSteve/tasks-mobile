@@ -6,8 +6,8 @@ import { ShapeError } from './parse';
 import { WriteQueue, type Pending, type QueueStore } from './queue';
 import { allows, DEFAULT_RIGHTS, type Right } from './rights';
 import { HubRefused, Unpaired, Unreachable, type DataSource } from './source';
-import type { KeptView, TokenStorage } from './storage';
-import { isFresh, readToken, writeToken } from './storage';
+import type { KeptView } from './storage';
+import { isFresh } from './storage';
 import type { CacheStore } from 'appkit-ui/cache';
 import type { DonePreview, Op, Status, TaskBrief, TaskDetail, VaultView } from './types';
 import type { TextKey } from './i18n';
@@ -18,16 +18,30 @@ export type Connection = 'checking' | 'live' | 'offline';
 export interface AppDeps {
   /** The source for a session token (`null` in the fake build, which needs none). */
   source(token: string | null): DataSource;
-  /** Trade a pairing code for a session token (the hub's `/auth/exchange`). */
-  exchange(code: string): Promise<string>;
+  /** This phone at the hub (`appkit-ui/device`): paired once with a key of its own, logged in on every start. */
+  device: DeviceAccess;
   /** `true` in the fake build: no pairing, the synthetic vault. */
   fake: boolean;
   viewStore: CacheStore<KeptView>;
   queueStore: QueueStore;
-  session: TokenStorage | undefined;
   now(): Date;
   newId(): string;
 }
+
+/** What a start finds at the hub for this device. */
+export type DeviceLogin = { kind: 'session'; token: string } | { kind: 'unpaired' } | { kind: 'refused' };
+
+export interface DeviceAccess {
+  /** Pair with a one-time code under a name; a first session token. */
+  pair(code: string, name: string): Promise<string>;
+  /** A session for the device kept here; throws when the hub cannot be reached (the device is kept then). */
+  login(): Promise<DeviceLogin>;
+  /** Forget the device on this phone (revoking it is the PC's). */
+  forget(): Promise<void>;
+}
+
+/** The name a phone is paired under when the person gives none. */
+export const DEFAULT_DEVICE_NAME = 'Phone';
 
 /** A message the page shows: a key of the dictionary and its values. */
 export interface Notice {
@@ -99,27 +113,51 @@ export class App {
     if (this.deps.fake) {
       this.connect(null);
     } else if (pairingCode !== null) {
-      await this.pair(pairingCode);
+      await this.pair(pairingCode, DEFAULT_DEVICE_NAME);
       return;
-    } else {
-      const token = readToken(this.deps.session);
-      if (token === null) {
-        this.screen = 'pair';
-        this.connection = 'offline';
-        return;
-      }
-      this.connect(token);
+    } else if (!(await this.login())) {
+      return;
     }
     await this.refresh();
   }
+
+  /**
+   * A session for the device kept on this phone, without a code. False when there is none: no device (the pairing
+   * screen), a device the hub refused (revoked: the pairing screen, and said so), or no hub to ask (offline, with
+   * the kept list; the next refresh asks again).
+   */
+  private async login(): Promise<boolean> {
+    let result: DeviceLogin;
+    try {
+      result = await this.deps.device.login();
+    } catch {
+      this.connection = 'offline';
+      this.loginPending = true;
+      return false;
+    }
+    this.loginPending = false;
+    if (result.kind === 'session') {
+      this.connect(result.token);
+      return true;
+    }
+    this.token = null;
+    this.source = null;
+    this.connection = 'offline';
+    this.screen = 'pair';
+    this.notice = result.kind === 'refused' ? { key: 'pair.revoked', tone: 'error' } : null;
+    return false;
+  }
+
+  /** The device is kept but no session was opened yet (the hub was not reached at the start). */
+  private loginPending = false;
 
   private connect(token: string | null): void {
     this.token = token;
     this.source = this.deps.source(token);
   }
 
-  /** Trade a code for a session and load the vault. */
-  async pair(code: string): Promise<boolean> {
+  /** Pair this phone with a code (once), and load the vault. */
+  async pair(code: string, name: string = DEFAULT_DEVICE_NAME): Promise<boolean> {
     const clean = pairingCodeOf(code);
     if (clean === null) {
       this.notice = { key: 'pair.bad', tone: 'error' };
@@ -127,8 +165,7 @@ export class App {
       return false;
     }
     try {
-      const token = await this.deps.exchange(clean);
-      writeToken(this.deps.session, token);
+      const token = await this.deps.device.pair(clean, name.trim() === '' ? DEFAULT_DEVICE_NAME : name.trim());
       this.connect(token);
       this.notice = null;
       this.screen = 'list';
@@ -142,11 +179,10 @@ export class App {
     }
   }
 
-  /** The session is gone: back to pairing, nothing waiting is lost. */
+  /** The session is gone (the hub restarted, or the device was revoked): back to pairing, nothing waiting is lost. */
   private unpaired(): void {
     this.token = null;
     this.source = null;
-    writeToken(this.deps.session, null);
     this.connection = 'offline';
     this.screen = 'pair';
     this.notice = { key: 'pair.lost', tone: 'error' };
@@ -154,7 +190,11 @@ export class App {
 
   /** Say what went wrong (MOB-09): never an empty list in place of an error. */
   private failed(error: unknown): void {
-    if (error instanceof Unpaired) return this.unpaired();
+    // A refused session outside a refresh: the refresh opens a new one for the device, or asks for pairing.
+    if (error instanceof Unpaired) {
+      void this.refresh();
+      return;
+    }
     if (error instanceof Unreachable) {
       this.connection = 'offline';
       return;
@@ -189,7 +229,18 @@ export class App {
     return this.running;
   }
 
-  private async load(): Promise<void> {
+  /** A new session for the device after the hub refused the old one (it restarted); false: pair again. */
+  private async renew(): Promise<boolean> {
+    this.token = null;
+    this.source = null;
+    if (this.deps.fake) return false;
+    const ok = await this.login();
+    if (!ok && this.screen === 'pair' && this.notice === null) this.notice = { key: 'pair.lost', tone: 'error' };
+    return ok;
+  }
+
+  private async load(retry = true): Promise<void> {
+    if (!this.source && this.loginPending && !(await this.login())) return;
     const source = this.source;
     if (!source) return;
     this.connection = 'checking';
@@ -197,7 +248,11 @@ export class App {
       const hello = await source.hello();
       this.engineProblem = hello.engineReady ? null : (hello.engineProblem ?? '?');
       const report = await this.queue.flush(source);
-      if (report.stopped === 'unpaired') return this.unpaired();
+      if (report.stopped === 'unpaired') {
+        if (retry && (await this.renew())) return this.load(false);
+        if (this.screen !== 'pair') this.unpaired();
+        return;
+      }
       const view = await source.vault();
       this.view = view;
       this.viewAt = this.deps.now().toISOString();
@@ -206,6 +261,11 @@ export class App {
       if (this.notice?.tone === 'error') this.notice = null;
       await this.deps.viewStore.save({ view, at: this.viewAt });
     } catch (error) {
+      if (error instanceof Unpaired) {
+        if (retry && (await this.renew())) return this.load(false);
+        if (this.screen !== 'pair') this.unpaired();
+        return;
+      }
       this.failed(error);
       if (this.connection === 'checking') this.connection = 'offline';
     }
@@ -338,7 +398,7 @@ export class App {
 
   /** Unpair this phone: the session, the copy and the queue go (MSEC-12). */
   async forget(): Promise<void> {
-    writeToken(this.deps.session, null);
+    await this.deps.device.forget();
     this.token = null;
     this.source = this.deps.fake ? this.deps.source(null) : null;
     await this.deps.viewStore.clear();

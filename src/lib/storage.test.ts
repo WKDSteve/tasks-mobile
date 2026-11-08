@@ -1,15 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { readToken, restoreView, writeToken, type TokenStorage } from './storage';
-
-function storage(): TokenStorage & { data: Map<string, string> } {
-  const data = new Map<string, string>();
-  return {
-    data,
-    getItem: (k) => data.get(k) ?? null,
-    setItem: (k, v) => void data.set(k, v),
-    removeItem: (k) => void data.delete(k),
-  };
-}
+import { restoreView } from './storage';
 
 describe('the kept view (MSEC-13)', () => {
   const view = {
@@ -36,33 +26,5 @@ describe('the kept view (MSEC-13)', () => {
     expect(restoreView(null)).toBeNull();
     expect(restoreView({ view })).toBeNull();
     expect(restoreView({ at: 'x', view: { ...view, tasks: 'no' } })).toBeNull();
-  });
-});
-
-describe('the session token (WEB-07)', () => {
-  it('keeps a token of the hub shape and refuses anything else', () => {
-    const s = storage();
-    writeToken(s, 'ab'.repeat(32));
-    expect(readToken(s)).toBe('ab'.repeat(32));
-    s.data.set('tasks-mobile.session', 'not a token');
-    expect(readToken(s)).toBeNull();
-    writeToken(s, null);
-    expect(s.data.size).toBe(0);
-  });
-
-  it('survives a storage that throws', () => {
-    const broken: TokenStorage = {
-      getItem: () => {
-        throw new Error('denied');
-      },
-      setItem: () => {
-        throw new Error('denied');
-      },
-      removeItem: () => {
-        throw new Error('denied');
-      },
-    };
-    expect(readToken(broken)).toBeNull();
-    expect(() => writeToken(broken, 'ab'.repeat(32))).not.toThrow();
   });
 });

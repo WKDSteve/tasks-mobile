@@ -1,13 +1,65 @@
 import { describe, expect, it } from 'vitest';
-import { App, pairingCodeOf, type AppDeps } from './app.svelte';
+import { App, pairingCodeOf, type AppDeps, type DeviceAccess, type DeviceLogin } from './app.svelte';
 import { FakeSource } from './fakeSource';
 import { memoryStore } from './storage';
-import type { KeptView, TokenStorage } from './storage';
+import type { KeptView } from './storage';
 import type { Pending } from './queue';
+import { Unpaired, type DataSource } from './source';
 
-function session(): TokenStorage & { data: Map<string, string> } {
-  const data = new Map<string, string>();
-  return { data, getItem: (k) => data.get(k) ?? null, setItem: (k, v) => void data.set(k, v), removeItem: (k) => void data.delete(k) };
+const GOOD_CODE = 'b'.repeat(32);
+
+/** A device as appkit-ui/device is to the page: paired once, a session for every login, refused when revoked. */
+interface FakeDevice extends DeviceAccess {
+  paired: boolean;
+  revoked: boolean;
+  offline: boolean;
+  logins: number;
+  names: string[];
+}
+
+function fakeDevice(paired = false): FakeDevice {
+  const d: FakeDevice = {
+    paired,
+    revoked: false,
+    offline: false,
+    logins: 0,
+    names: [],
+    async pair(code, name) {
+      if (code !== GOOD_CODE) throw new Error('code expired');
+      d.paired = true;
+      d.names.push(name);
+      return 'p'.repeat(64);
+    },
+    async login(): Promise<DeviceLogin> {
+      if (d.offline) throw new TypeError('Failed to fetch');
+      d.logins += 1;
+      if (!d.paired) return { kind: 'unpaired' };
+      if (d.revoked) {
+        d.paired = false;
+        return { kind: 'refused' };
+      }
+      return { kind: 'session', token: String(d.logins).padStart(64, '0') };
+    },
+    async forget() {
+      d.paired = false;
+    },
+  };
+  return d;
+}
+
+/** The fake hub behind a session token: a token in `dead` is refused (the hub restarted). */
+function sourceFor(fake: FakeSource, dead: Set<string | null>): (token: string | null) => DataSource {
+  return (token) => {
+    const gate = <T>(work: () => Promise<T>): Promise<T> => (dead.has(token) ? Promise.reject(new Unpaired()) : work());
+    return {
+      kind: 'hub',
+      hello: () => gate(() => fake.hello()),
+      vault: () => gate(() => fake.vault()),
+      task: (id) => gate(() => fake.task(id)),
+      write: (id, op) => gate(() => fake.write(id, op)),
+      donePreview: (id) => gate(() => fake.donePreview(id)),
+    };
+  };
 }
 
 let n = 0;
@@ -16,11 +68,10 @@ function deps(fake: FakeSource, over: Partial<AppDeps> = {}): AppDeps & { views:
   const queue = memoryStore<Pending[]>();
   return {
     source: () => fake,
-    exchange: async () => 'cd'.repeat(32),
+    device: fakeDevice(),
     fake: true,
     viewStore: views,
     queueStore: { load: () => queue.load(), save: (v) => queue.save(v), clear: () => queue.clear() },
-    session: session(),
     now: () => new Date('2026-01-01T00:00:00Z'),
     newId: () => `id-${String((n += 1)).padStart(8, '0')}`,
     views,
@@ -224,28 +275,95 @@ describe('pairing', () => {
     expect(pairingCodeOf(`#pair=${code}zz`)).toBeNull();
   });
 
-  it('asks for pairing without a session, and keeps the token of a pairing in the tab only', async () => {
-    const s = session();
-    const app = new App(deps(new FakeSource(), { fake: false, session: s }));
+  it('asks for pairing once; after that a start signs in by itself, without a code', async () => {
+    const device = fakeDevice();
+    const fake = new FakeSource();
+    const first = new App(deps(fake, { fake: false, device }));
+    await first.start(null);
+    expect(first.screen).toBe('pair');
+    expect(await first.pair(GOOD_CODE, '  Fairphone  ')).toBe(true);
+    expect(device.names).toEqual(['Fairphone']);
+    expect(first.screen).toBe('list');
+    expect(first.connection).toBe('live');
+    // The app is closed and opened again: no pairing screen, a session from the device key.
+    const again = new App(deps(fake, { fake: false, device }));
+    await again.start(null);
+    expect(again.screen).toBe('list');
+    expect(again.connection).toBe('live');
+    expect(device.logins).toBe(2);
+  });
+
+  it('pairs under a default name when none is given', async () => {
+    const device = fakeDevice();
+    const app = new App(deps(new FakeSource(), { fake: false, device }));
+    await app.pair(GOOD_CODE, '   ');
+    expect(device.names).toEqual(['Phone']);
+  });
+
+  it('asks for pairing again, and says why, when the PC revoked the device', async () => {
+    const device = fakeDevice(true);
+    device.revoked = true;
+    const app = new App(deps(new FakeSource(), { fake: false, device }));
     await app.start(null);
     expect(app.screen).toBe('pair');
-    expect(await app.pair('b'.repeat(32))).toBe(true);
-    expect(s.data.get('tasks-mobile.session')).toBe('cd'.repeat(32));
+    expect(app.notice).toMatchObject({ key: 'pair.revoked' });
+  });
+
+  it('starts offline with the kept list when the hub is not there, and signs in on the next refresh', async () => {
+    const device = fakeDevice(true);
+    device.offline = true;
+    const d = deps(new FakeSource(), { fake: false, device });
+    d.views.value = { at: '2025-12-31T00:00:00Z', view: { rev: 'r', tasks: [], areas: [{ name: 'garden', dataClass: 'public' }], hiddenAreas: 0 } };
+    const app = new App(d);
+    await app.start(null);
     expect(app.screen).toBe('list');
+    expect(app.connection).toBe('offline');
+    expect(app.view?.areas).toHaveLength(1);
+    device.offline = false;
+    await app.refresh();
     expect(app.connection).toBe('live');
   });
 
+  it('opens a new session by itself when the hub restarted (its session is gone), without the pairing screen', async () => {
+    const device = fakeDevice(true);
+    const dead = new Set<string | null>();
+    const fake = new FakeSource();
+    const app = new App(deps(fake, { fake: false, device, source: sourceFor(fake, dead) }));
+    await app.start(null);
+    expect(app.connection).toBe('live');
+    dead.add(String(device.logins).padStart(64, '0'));
+    await app.refresh();
+    expect(app.screen).toBe('list');
+    expect(app.connection).toBe('live');
+    expect(device.logins).toBe(2);
+  });
+
+  it('asks for pairing when the hub refuses the session and the device too', async () => {
+    const device = fakeDevice(true);
+    const dead = new Set<string | null>();
+    const fake = new FakeSource();
+    const app = new App(deps(fake, { fake: false, device, source: sourceFor(fake, dead) }));
+    await app.start(null);
+    dead.add(String(device.logins).padStart(64, '0'));
+    device.revoked = true;
+    await app.refresh();
+    expect(app.screen).toBe('pair');
+    expect(app.notice).toMatchObject({ key: 'pair.revoked' });
+  });
+
   it('says that a code was refused', async () => {
-    const app = new App(
-      deps(new FakeSource(), {
-        fake: false,
-        exchange: async () => {
-          throw new Error('code expired');
-        },
-      }),
-    );
+    const app = new App(deps(new FakeSource(), { fake: false, device: fakeDevice() }));
     await app.start('c'.repeat(32));
     expect(app.screen).toBe('pair');
     expect(app.notice).toMatchObject({ key: 'pair.failed', params: { message: 'code expired' } });
+  });
+
+  it('forgets the device key on this phone when it is disconnected', async () => {
+    const device = fakeDevice(true);
+    const app = new App(deps(new FakeSource(), { fake: false, device }));
+    await app.start(null);
+    await app.forget();
+    expect(device.paired).toBe(false);
+    expect(app.screen).toBe('pair');
   });
 });

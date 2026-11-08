@@ -34,8 +34,9 @@ http://127.0.0.1:PORT/m/#pair=<code>
 
 or open `http://127.0.0.1:PORT/m/` and paste the link into the field. The code works once and for a short time.
 
-The session lasts while the app is open. After it was closed, pair again (a per-device key comes with the hub's
-device support).
+This is needed **once**: the phone keeps a key of its own and signs in by itself on every start, also after the
+PC or the hub restarted. Give the device a name in the field below the code; the PC lists devices by it. When the PC
+revokes the device, the app shows the pairing screen again.
 
 ## 3. Install
 
@@ -57,5 +58,5 @@ or with **Send now**).
 
 ## 5. Disconnect
 
-**Disconnect and delete the data** (at the bottom of **Waiting**, after a question) removes the session, the kept list
+**Disconnect and delete the data** (at the bottom of **Waiting**, after a question) removes the device key, the kept list
 and what still waits.

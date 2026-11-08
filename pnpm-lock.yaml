@@ -9,8 +9,8 @@ importers:
   .:
     dependencies:
       appkit-ui:
-        specifier: github:WKDSteve/appkit#v0.39.0&path:ui-kit
-        version: https://codeload.github.com/WKDSteve/appkit/tar.gz/5ebb3d7c583c81414cfbb2cff2b53e8e3f17e5d7#path:ui-kit(svelte@5.57.3)
+        specifier: github:WKDSteve/appkit#v0.41.0&path:ui-kit
+        version: https://codeload.github.com/WKDSteve/appkit/tar.gz/bc322f4a59e8451825cfa1bbc35658b32e21866f#path:ui-kit(svelte@5.57.3)
     devDependencies:
       '@axe-core/playwright':
         specifier: ^4.13.0
@@ -218,8 +218,8 @@ packages:
     engines: {node: '>=0.4.0'}
     hasBin: true
 
-  appkit-ui@https://codeload.github.com/WKDSteve/appkit/tar.gz/5ebb3d7c583c81414cfbb2cff2b53e8e3f17e5d7#path:ui-kit:
-    resolution: {path: ui-kit, tarball: https://codeload.github.com/WKDSteve/appkit/tar.gz/5ebb3d7c583c81414cfbb2cff2b53e8e3f17e5d7}
+  appkit-ui@https://codeload.github.com/WKDSteve/appkit/tar.gz/bc322f4a59e8451825cfa1bbc35658b32e21866f#path:ui-kit:
+    resolution: {path: ui-kit, tarball: https://codeload.github.com/WKDSteve/appkit/tar.gz/bc322f4a59e8451825cfa1bbc35658b32e21866f}
     version: 0.0.0
     peerDependencies:
       svelte: ^5.0.0
@@ -718,7 +718,7 @@ snapshots:
 
   acorn@8.19.0: {}
 
-  appkit-ui@https://codeload.github.com/WKDSteve/appkit/tar.gz/5ebb3d7c583c81414cfbb2cff2b53e8e3f17e5d7#path:ui-kit(svelte@5.57.3):
+  appkit-ui@https://codeload.github.com/WKDSteve/appkit/tar.gz/bc322f4a59e8451825cfa1bbc35658b32e21866f#path:ui-kit(svelte@5.57.3):
     dependencies:
       markdown-it: 15.0.3
       svelte: 5.57.3

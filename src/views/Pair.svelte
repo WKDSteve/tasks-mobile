@@ -1,9 +1,10 @@
 <script lang="ts">
-  import type { App } from '../lib/app.svelte';
+  import { DEFAULT_DEVICE_NAME, type App } from '../lib/app.svelte';
   import type { Translate } from '../lib/i18n';
 
   let { app, t }: { app: App; t: Translate } = $props();
   let code = $state('');
+  let name = $state('');
   let sending = $state(false);
 
   async function submit(event: SubmitEvent): Promise<void> {
@@ -13,7 +14,7 @@
       // The field is emptied either way: a code works once.
       const text = code;
       code = '';
-      await app.pair(text);
+      await app.pair(text, name);
     } finally {
       sending = false;
     }
@@ -26,6 +27,8 @@
   <form onsubmit={submit}>
     <label for="pair-code">{t('pair.field')}</label>
     <input id="pair-code" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" bind:value={code} />
+    <label for="pair-name">{t('pair.name')}</label>
+    <input id="pair-name" type="text" maxlength="40" autocomplete="off" placeholder={DEFAULT_DEVICE_NAME} bind:value={name} />
     <p><button class="primary" type="submit" disabled={sending || code.trim() === ''}>{t('pair.go')}</button></p>
   </form>
 </section>

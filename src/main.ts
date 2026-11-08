@@ -1,8 +1,9 @@
 import { mount } from 'svelte';
-import { HubClient } from 'appkit-ui/client';
+import { ApiError, HubClient } from 'appkit-ui/client';
+import { deviceLogin, indexedDbDeviceStore, pairDevice, type DeviceDeps } from 'appkit-ui/device';
 import { takePairingCode } from 'appkit-ui/pair';
 import App from './App.svelte';
-import { App as AppState, type AppDeps } from './lib/app.svelte';
+import { App as AppState, type AppDeps, type DeviceAccess } from './lib/app.svelte';
 import { HubSource } from './lib/hubSource';
 import { readShare, withoutShare } from './lib/share';
 import type { DataSource } from './lib/source';
@@ -10,12 +11,32 @@ import { memoryStore, queueStore, viewStore } from './lib/storage';
 import { workerUrl } from './lib/worker';
 import './app.css';
 
-function sessionStore(): Storage | undefined {
-  try {
-    return window.sessionStorage;
-  } catch {
-    return undefined;
-  }
+/**
+ * This phone at the hub: a device key (appkit-ui/device) when the hub keeps devices; a hub that does not know them yet
+ * (404 on the pairing route) takes the code the old way, for a session that ends with the page.
+ */
+function deviceAccess(db: IDBFactory | undefined): DeviceAccess {
+  const store = indexedDbDeviceStore(db, 'tasks-mobile-device');
+  const deps: DeviceDeps = {
+    fetchFn: window.fetch.bind(window),
+    subtle: window.crypto.subtle,
+    store,
+    origin: window.location.origin,
+  };
+  return {
+    pair: async (code, name) => {
+      try {
+        return await pairDevice(deps, code, name);
+      } catch (error) {
+        if (error instanceof ApiError && error.status === 404) {
+          return new HubClient(window.fetch.bind(window), '/api/tasks').exchange(code);
+        }
+        throw error;
+      }
+    },
+    login: () => deviceLogin(deps),
+    forget: () => store.clear(),
+  };
 }
 
 function indexedDb(): IDBFactory | undefined {
@@ -48,11 +69,10 @@ async function main(): Promise<void> {
   const db = indexedDb();
   const deps: AppDeps = {
     source: makeSource,
-    exchange: (code) => new HubClient(window.fetch.bind(window), '/api/tasks').exchange(code),
+    device: deviceAccess(db),
     fake: __FAKE__,
     viewStore: db ? viewStore(db) : memoryStore(),
     queueStore: db ? queueStore(db) : memoryStore(),
-    session: sessionStore(),
     now: () => new Date(),
     newId: () => crypto.randomUUID(),
   };

@@ -1,6 +1,7 @@
 // What the phone keeps (MSEC-12: as little as works offline): the last vault it was shown, cut to the shown areas,
 // and the queue of writes. Both in IndexedDB of this origin; both are read back as untrusted (MSEC-13) and both go
-// when the phone is unpaired. The session token is not kept here: it lives in `sessionStorage` only (WEB-07).
+// when the phone is unpaired. The session token is not kept at all: it lives in memory only (PWA-03); the device key
+// (appkit-ui/device) opens a new session on every start.
 
 import { indexedDbStore, type CacheStore } from 'appkit-ui/cache';
 import { isAreaName, isTaskId } from './parse';
@@ -107,31 +108,4 @@ export function memoryStore<T>(): CacheStore<T> & { value: T | null } {
     },
   };
   return box;
-}
-
-const TOKEN_KEY = 'tasks-mobile.session';
-
-export interface TokenStorage {
-  getItem(key: string): string | null;
-  setItem(key: string, value: string): void;
-  removeItem(key: string): void;
-}
-
-/** The session token of this tab (WEB-07): `sessionStorage` only, a token of the hub's shape only. */
-export function readToken(storage: TokenStorage | undefined): string | null {
-  try {
-    const token = storage?.getItem(TOKEN_KEY) ?? null;
-    return token !== null && /^[0-9a-f]{32,128}$/.test(token) ? token : null;
-  } catch {
-    return null;
-  }
-}
-
-export function writeToken(storage: TokenStorage | undefined, token: string | null): void {
-  try {
-    if (token === null) storage?.removeItem(TOKEN_KEY);
-    else storage?.setItem(TOKEN_KEY, token);
-  } catch {
-    // a storage that refuses: the session lasts as long as the page
-  }
 }
