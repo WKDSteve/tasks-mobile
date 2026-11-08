@@ -88,6 +88,17 @@ test('a conflict is shown and nothing is overwritten', async ({ page }) => {
   await expect(page.getByText('Nothing was overwritten.')).toBeVisible();
 });
 
+test('a detail that arrives late does not undo the status the user picked', async ({ page }) => {
+  await open(page);
+  await fakeHub(page, { holdTasks: true });
+  await page.locator('[data-id="kitchen/fix-the-tap"]').click();
+  await page.getByLabel('Status').selectOption('blocked');
+  await fakeHub(page, { releaseTasks: true });
+  await expect(page.getByTestId('task-body')).toBeVisible();
+  await expect(page.getByLabel('Status')).toHaveValue('blocked');
+  await expect(page.getByRole('button', { name: 'Set status' })).toBeEnabled();
+});
+
 test('finishing shows what it sets off and needs a yes (MUI-01)', async ({ page }) => {
   await open(page);
   await page.locator('[data-id="kitchen/fix-the-tap"]').click();

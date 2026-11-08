@@ -1,6 +1,7 @@
 <script lang="ts">
   // One task: its text (as text only, hidden characters made visible: MSEC-05), its status, its open questions, and
   // finishing it after the engine said what that sets off (MUI-01: a consequential step is confirmed).
+  import { untrack } from 'svelte';
   import { markHidden } from 'appkit-ui/text';
   import type { App } from '../lib/app.svelte';
   import type { Translate, TextKey } from '../lib/i18n';
@@ -11,8 +12,12 @@
   const task = $derived(app.detail?.task ?? app.opened);
   let chosen = $state<Status | ''>('');
 
+  // The choice follows the task's status when another task is shown or its status changed, not when the same task
+  // is read again (a detail that arrives late must not undo what the user picked meanwhile).
+  const statusKey = $derived(task ? `${task.id}:${task.status ?? ''}` : '');
   $effect(() => {
-    chosen = task?.status && task.status !== 'done' ? task.status : '';
+    void statusKey;
+    chosen = untrack(() => (task?.status && task.status !== 'done' ? task.status : ''));
   });
 </script>
 

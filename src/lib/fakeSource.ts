@@ -28,6 +28,9 @@ export interface FakeControls {
   offline: boolean;
   /** The next write is carried out but its answer is lost. */
   loseNextAnswer: boolean;
+  /** Reads of one task wait until `releaseTasks()` (a slow tunnel). */
+  holdTasks: boolean;
+  releaseTasks(): void;
   /** Change a task as another program would: its version moves on. */
   touch(id: string): void;
   /** The writes the fake received, in order. */
@@ -138,6 +141,13 @@ export class FakeSource implements DataSource, FakeControls {
   readonly kind = 'fake' as const;
   offline = false;
   loseNextAnswer = false;
+  holdTasks = false;
+  private held: (() => void)[] = [];
+
+  releaseTasks(): void {
+    this.holdTasks = false;
+    for (const go of this.held.splice(0)) go();
+  }
   readonly writes: { clientOpId: string; op: Op }[] = [];
   private tasks = initialTasks();
   private rev = 1;
@@ -203,6 +213,7 @@ export class FakeSource implements DataSource, FakeControls {
 
   async task(id: string): Promise<TaskDetail> {
     this.reachable();
+    if (this.holdTasks) await new Promise<void>((go) => this.held.push(go));
     const t = this.tasks.find((x) => x.id === id);
     if (!t) throw new Error('not found');
     const doc = {
