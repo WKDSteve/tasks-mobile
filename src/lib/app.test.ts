@@ -174,6 +174,19 @@ describe('App on the synthetic vault', () => {
     expect(app.notice?.key).toBe('task.done_offline');
   });
 
+  it('goes back to the list after finishing and says so, without asking the engine for the finished task', async () => {
+    const fake = new FakeSource();
+    const app = new App(deps(fake));
+    await app.start(null);
+    const task = app.view!.tasks.find((t) => t.id === 'kitchen/fix-the-tap')!;
+    await app.openTask(task);
+    await app.askFinish(task);
+    await app.finish(task);
+    expect(app.notice).toEqual({ key: 'task.done_ok', params: { title: task.title }, tone: 'info' });
+    expect(app.screen).toBe('list');
+    expect(app.opened).toBeNull();
+  });
+
   it('never sends a write again by itself when its answer was lost', async () => {
     const fake = new FakeSource();
     const app = new App(deps(fake));

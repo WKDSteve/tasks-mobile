@@ -376,8 +376,16 @@ export class App {
     if (!confirm) return;
     this.busy = true;
     try {
-      await this.enqueue({ op: 'done', id: task.id, confirm }, task.area, task.title);
-      await this.reopen();
+      const item = await this.enqueue({ op: 'done', id: task.id, confirm }, task.area, task.title);
+      if (item && !this.queue.items.some((i) => i.clientOpId === item.clientOpId)) {
+        // Taken by the engine: a finished task is no task to read any more ("no such task"), so back to the list.
+        this.opened = null;
+        this.detail = null;
+        this.screen = 'list';
+        this.notice = { key: 'task.done_ok', params: { title: task.title }, tone: 'info' };
+      } else {
+        await this.reopen();
+      }
     } finally {
       this.busy = false;
     }

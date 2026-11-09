@@ -108,7 +108,9 @@ test('finishing shows what it sets off and needs a yes (MUI-01)', async ({ page 
   await expect(page.getByTestId('done-preview')).toHaveCount(0);
   await page.getByRole('button', { name: 'Finish …' }).click();
   await page.getByRole('button', { name: 'Yes, finish' }).click();
-  await page.getByRole('button', { name: /Back/ }).click();
+  // Back on the list by itself, with a word on what was done and no refusal (the engine serves no finished task).
+  await expect(page.getByTestId('notice')).toHaveText('Done: “Fix the tap”');
+  await expect(page.getByRole('alert')).toHaveCount(0);
   await expect(page.locator('[data-id="kitchen/fix-the-tap"]')).toHaveCount(0);
 });
 

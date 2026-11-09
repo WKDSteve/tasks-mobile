@@ -7,7 +7,7 @@
 // The names are neutral (APP-01): nothing here is a real area or a real task.
 
 import { areaClasses, donePreview, hubHello, opOutcome, taskDetail, vaultView } from './parse';
-import { AnswerLost, Unreachable, type DataSource } from './source';
+import { AnswerLost, HubRefused, Unreachable, type DataSource } from './source';
 import type { DataClass, DonePreview, HubHello, Op, OpOutcome, TaskDetail, VaultView } from './types';
 
 interface FakeTask {
@@ -216,6 +216,8 @@ export class FakeSource implements DataSource, FakeControls {
     if (this.holdTasks) await new Promise<void>((go) => this.held.push(go));
     const t = this.tasks.find((x) => x.id === id);
     if (!t) throw new Error('not found');
+    // Like the engine: a finished task is not served as a task any more.
+    if (t.status === 'done') throw new HubRefused(404, 'not_found', `no such task: ${id}`);
     const doc = {
       ...HEAD,
       kind: 'tasks.task',
