@@ -216,6 +216,49 @@ describe('App on the synthetic vault', () => {
     expect(app.notice).toMatchObject({ key: 'capture.not_taken', tone: 'error' });
   });
 
+  it('"waiting for the PC" turns into "created" once the write is sent', async () => {
+    const fake = new FakeSource();
+    const app = new App(deps(fake));
+    await app.start(null);
+    fake.offline = true;
+    await app.refresh();
+    await app.capture({ area: 'garden', title: 'Sent later', context: '' });
+    expect(app.notice).toMatchObject({ key: 'capture.queued' });
+    fake.offline = false;
+    await app.refresh();
+    expect(app.pending).toHaveLength(0);
+    expect(app.notice).toMatchObject({ key: 'capture.created', params: { title: 'Sent later' }, tone: 'info' });
+  });
+
+  it('"waiting for the PC" goes with the write when it is dropped or the phone is unpaired', async () => {
+    const fake = new FakeSource();
+    const app = new App(deps(fake));
+    await app.start(null);
+    fake.offline = true;
+    await app.refresh();
+    await app.capture({ area: 'garden', title: 'Dropped', context: '' });
+    await app.drop(app.pending[0]!.clientOpId);
+    expect(app.pending).toHaveLength(0);
+    expect(app.notice).toBeNull();
+    await app.capture({ area: 'garden', title: 'Unpaired', context: '' });
+    expect(app.notice).toMatchObject({ key: 'capture.queued' });
+    await app.forget();
+    expect(app.notice).toBeNull();
+  });
+
+  it('another notice is not touched when the queue changes', async () => {
+    const fake = new FakeSource();
+    const app = new App(deps(fake));
+    await app.start(null);
+    fake.offline = true;
+    await app.refresh();
+    await app.capture({ area: 'garden', title: 'Waits', context: '' });
+    app.notice = { key: 'task.done_offline', tone: 'info' };
+    fake.offline = false;
+    await app.refresh();
+    expect(app.notice).toMatchObject({ key: 'task.done_offline' });
+  });
+
   it('clears an error once the hub answered in full', async () => {
     const fake = new FakeSource();
     const app = new App(deps(fake));

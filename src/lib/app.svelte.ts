@@ -48,6 +48,8 @@ export interface Notice {
   key: TextKey;
   params?: Record<string, string | number>;
   tone: 'info' | 'error';
+  /** The queued write the notice speaks of ("waiting for the PC"): it follows that write until it is gone. */
+  op?: string;
 }
 
 const PAIR_CODE = /(?:^|[#&?])pair=([0-9a-f]{32,128})(?:&|$)/;
@@ -82,7 +84,22 @@ export class App {
   constructor(private readonly deps: AppDeps) {
     this.queue = new WriteQueue(deps.queueStore, deps.newId, deps.now, () => {
       this.pending = this.queue.items.map((i) => ({ ...i }));
+      this.followQueued();
     });
+  }
+
+  /**
+   * "Waiting for the PC" stays true only while the write waits: sent, it says "created"; not taken, it says so. A
+   * write dropped by the person, or a queue deleted on unpairing, takes the notice with it (see `drop`, `forget`).
+   */
+  private followQueued(): void {
+    const notice = this.notice;
+    if (notice?.key !== 'capture.queued' || notice.op === undefined) return;
+    const left = this.queue.items.find((i) => i.clientOpId === notice.op);
+    if (!left) this.notice = { key: 'capture.created', params: notice.params, tone: 'info' };
+    else if (left.state !== 'waiting' && left.state !== 'sending') {
+      this.notice = { key: 'capture.not_taken', params: notice.params, tone: 'error' };
+    }
   }
 
   get kind(): 'hub' | 'fake' {
@@ -314,7 +331,9 @@ export class App {
       const left = this.queue.items.find((i) => i.clientOpId === item.clientOpId);
       const params = { title: checked.op.title };
       if (!left) this.notice = { key: 'capture.created', params, tone: 'info' };
-      else if (left.state === 'waiting' || left.state === 'sending') this.notice = { key: 'capture.queued', params, tone: 'info' };
+      else if (left.state === 'waiting' || left.state === 'sending') {
+        this.notice = { key: 'capture.queued', params, tone: 'info', op: item.clientOpId };
+      }
       else this.notice = { key: 'capture.not_taken', params, tone: 'error' };
       return true;
     } finally {
@@ -401,12 +420,14 @@ export class App {
   }
 
   async drop(clientOpId: string): Promise<void> {
+    if (this.notice?.op === clientOpId) this.notice = null;
     await this.queue.drop(clientOpId);
   }
 
   /** Unpair this phone: the session, the copy and the queue go (MSEC-12). */
   async forget(): Promise<void> {
     await this.deps.device.forget();
+    if (this.notice?.op !== undefined) this.notice = null;
     this.token = null;
     this.source = this.deps.fake ? this.deps.source(null) : null;
     await this.deps.viewStore.clear();
