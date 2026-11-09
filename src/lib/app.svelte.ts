@@ -90,6 +90,8 @@ export class App {
   problems = $state<DraftProblem[]>([]);
   pending = $state<WriteQueue['items']>([]);
   rights: ReadonlySet<Right> = DEFAULT_RIGHTS;
+  /** Counts the writes of the task page the PC refused as a conflict: the page sets its choices back to the new state. */
+  conflicts = $state(0);
   busy = $state(false);
 
   readonly queue: WriteQueue;
@@ -412,19 +414,31 @@ export class App {
     const op: Op = { op: 'set', id: task.id, patch: { status }, ...(task.etag ? { if_match: task.etag } : {}) };
     this.busy = true;
     try {
-      await this.enqueue(op, task.area, task.title);
+      const item = await this.enqueue(op, task.area, task.title);
       await this.reopen();
+      this.sayConflict(item);
     } finally {
       this.busy = false;
     }
+  }
+
+  /**
+   * A write of the task page the PC refused because the file changed there: said on the page itself (not only under
+   * "Waiting"), with the new state loaded and the choices set back to it.
+   */
+  private sayConflict(item: Pending | null): void {
+    if (!item || this.queue.items.find((i) => i.clientOpId === item.clientOpId)?.state !== 'conflict') return;
+    this.notice = { key: 'task.conflict', tone: 'error' };
+    this.conflicts += 1;
   }
 
   async answer(task: TaskBrief, question: string, option: number): Promise<void> {
     const op: Op = { op: 'answer', id: task.id, question, option, ...(task.etag ? { if_match: task.etag } : {}) };
     this.busy = true;
     try {
-      await this.enqueue(op, task.area, task.title);
+      const item = await this.enqueue(op, task.area, task.title);
       await this.reopen();
+      this.sayConflict(item);
     } finally {
       this.busy = false;
     }

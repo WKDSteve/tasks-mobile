@@ -452,6 +452,33 @@ function manualTimer() {
   };
 }
 
+describe('a conflict on the task page', () => {
+  it('is said on the page, with the new state loaded and the choices set back', async () => {
+    const fake = new FakeSource();
+    const app = new App(deps(fake));
+    await app.start(null);
+    const brief = app.view!.tasks.find((t) => t.id === 'garden/water-the-plants')!;
+    await app.openTask(brief);
+    fake.touch('garden/water-the-plants');
+    await app.setStatus(brief, 'doing');
+    expect(app.notice).toMatchObject({ key: 'task.conflict', tone: 'error' });
+    expect(app.conflicts).toBe(1);
+    expect(app.pending[0]?.state).toBe('conflict');
+    expect(app.detail?.task.status).toBe(brief.status);
+  });
+
+  it('a write that is taken says nothing of a conflict', async () => {
+    const fake = new FakeSource();
+    const app = new App(deps(fake));
+    await app.start(null);
+    const brief = app.view!.tasks.find((t) => t.id === 'garden/water-the-plants')!;
+    await app.openTask(brief);
+    await app.setStatus(brief, 'doing');
+    expect(app.notice?.key).not.toBe('task.conflict');
+    expect(app.conflicts).toBe(0);
+  });
+});
+
 describe('tries again while offline in front', () => {
   it('asks again with growing waits and becomes live without a change of view', async () => {
     const fake = new FakeSource();

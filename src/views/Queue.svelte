@@ -33,8 +33,15 @@
       <li data-state={item.state}>
         <p class="what untrusted">{what(item)}</p>
         <p class:bad={item.state === 'conflict' || item.state === 'refused' || item.state === 'unknown'}>
-          {t(`queue.state.${item.state}` as TextKey)}{#if item.message}: <span class="untrusted">{markHidden(item.message)}</span>{/if}
+          {t(`queue.state.${item.state}` as TextKey)}{#if item.message && item.state !== 'conflict'}: <span class="untrusted">{markHidden(item.message)}</span>{/if}
         </p>
+        {#if item.message && item.state === 'conflict'}
+          <!-- The engine's words name versions by hash: there for whoever wants them, not in the way. -->
+          <details class="muted">
+            <summary>{t('queue.details')}</summary>
+            <span class="untrusted">{markHidden(item.message)}</span>
+          </details>
+        {/if}
         {#if item.state === 'unknown'}
           <p class="muted">{t('queue.unknown_help')}</p>
         {:else if item.state === 'conflict'}

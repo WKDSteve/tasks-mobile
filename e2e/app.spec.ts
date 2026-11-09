@@ -83,9 +83,16 @@ test('a conflict is shown and nothing is overwritten', async ({ page }) => {
   await fakeHub(page, { touch: 'garden/water-the-plants' });
   await page.getByLabel('Status').selectOption('doing');
   await page.getByRole('button', { name: 'Set status' }).click();
+  // Said on the task page itself, and the choice is back on what is true now.
+  await expect(page.getByTestId('notice')).toContainText('Changed on the PC: nothing was overwritten');
+  await expect(page.getByLabel('Status')).not.toHaveValue('doing');
   await page.getByRole('button', { name: /Waiting/ }).click();
   await expect(page.getByTestId('queue').locator('li')).toHaveAttribute('data-state', 'conflict');
   await expect(page.getByText('Nothing was overwritten.')).toBeVisible();
+  // The engine's words (versions by hash) only when asked for.
+  await expect(page.getByText('the file changed since it was read')).toBeHidden();
+  await page.getByText('Message of the engine').click();
+  await expect(page.getByText('the file changed since it was read')).toBeVisible();
 });
 
 test('a detail that arrives late does not undo the status the user picked', async ({ page }) => {

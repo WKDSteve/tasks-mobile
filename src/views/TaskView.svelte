@@ -13,8 +13,9 @@
   let chosen = $state<Status | ''>('');
 
   // The choice follows the task's status when another task is shown or its status changed, not when the same task
-  // is read again (a detail that arrives late must not undo what the user picked meanwhile).
-  const statusKey = $derived(task ? `${task.id}:${task.status ?? ''}` : '');
+  // is read again (a detail that arrives late must not undo what the user picked meanwhile), and after a conflict (the
+  // PC changed the task: the choice goes back to what is true now).
+  const statusKey = $derived(task ? `${task.id}:${task.status ?? ''}:${app.conflicts}` : '');
   $effect(() => {
     void statusKey;
     chosen = untrack(() => (task?.status && task.status !== 'done' ? task.status : ''));
