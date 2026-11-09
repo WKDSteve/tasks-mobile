@@ -75,6 +75,8 @@ async function main(): Promise<void> {
     queueStore: db ? queueStore(db) : memoryStore(),
     now: () => new Date(),
     newId: () => crypto.randomUUID(),
+    timer: { set: (run, ms) => window.setTimeout(run, ms), clear: (handle) => window.clearTimeout(handle as number) },
+    visible: () => document.visibilityState === 'visible',
   };
   const state = new AppState(deps);
   const target = document.getElementById('app');
@@ -86,6 +88,7 @@ async function main(): Promise<void> {
   window.addEventListener('online', () => void state.refresh());
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') void state.refresh();
+    else state.pause();
   });
 
   if ('serviceWorker' in navigator) {

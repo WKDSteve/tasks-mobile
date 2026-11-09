@@ -26,7 +26,22 @@ export interface AppDeps {
   queueStore: QueueStore;
   now(): Date;
   newId(): string;
+  /** Timers for the next try while offline; without them (the tests that do not ask for it) no try is planned. */
+  timer?: RetryTimer;
+  /** Whether the page is shown; a page in the background asks nothing. */
+  visible?(): boolean;
 }
+
+export interface RetryTimer {
+  set(run: () => void, ms: number): unknown;
+  clear(handle: unknown): void;
+}
+
+/**
+ * The waits before each new try while the page is offline in front: a tunnel that comes back changes nothing the page
+ * would hear of (no `online`, no `visibilitychange`), so it asks again by itself, less often the longer it lasts.
+ */
+export const RETRY_MS = [5_000, 15_000, 60_000];
 
 /** What a start finds at the hub for this device. */
 export type DeviceLogin = { kind: 'session'; token: string } | { kind: 'unpaired' } | { kind: 'refused' };
@@ -133,6 +148,8 @@ export class App {
       await this.pair(pairingCode, DEFAULT_DEVICE_NAME);
       return;
     } else if (!(await this.login())) {
+      // No hub at the start: the device waits for its login, and the next try is planned like after any run.
+      this.planRetry();
       return;
     }
     await this.refresh();
@@ -241,9 +258,46 @@ export class App {
         } while (this.again);
       } finally {
         this.running = null;
+        this.planRetry();
       }
     })();
     return this.running;
+  }
+
+  private retryHandle: unknown = null;
+  private retries = 0;
+
+  /** Whether there is a hub to ask again: a session, or a device whose login is still to be made. */
+  get canRetry(): boolean {
+    return this.paired || this.loginPending;
+  }
+
+  /** After a run: offline in front, the next try is set (one at a time); live, the waits start over. */
+  private planRetry(): void {
+    const timer = this.deps.timer;
+    if (!timer) return;
+    if (this.connection !== 'offline' || !this.canRetry) {
+      this.retries = 0;
+      this.stopRetry();
+      return;
+    }
+    if (this.retryHandle !== null || !(this.deps.visible?.() ?? true)) return;
+    const ms = RETRY_MS[Math.min(this.retries, RETRY_MS.length - 1)]!;
+    this.retries += 1;
+    this.retryHandle = timer.set(() => {
+      this.retryHandle = null;
+      if (this.deps.visible?.() ?? true) void this.refresh();
+    }, ms);
+  }
+
+  private stopRetry(): void {
+    if (this.retryHandle !== null) this.deps.timer?.clear(this.retryHandle);
+    this.retryHandle = null;
+  }
+
+  /** The page went to the background: no tries until it is back (then `refresh` plans again). */
+  pause(): void {
+    this.stopRetry();
   }
 
   /** A new session for the device after the hub refused the old one (it restarted); false: pair again. */

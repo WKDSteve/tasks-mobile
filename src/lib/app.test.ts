@@ -423,3 +423,114 @@ describe('pairing', () => {
     expect(app.screen).toBe('pair');
   });
 });
+
+/** Timers by hand: what is set waits until the test runs it. */
+function manualTimer() {
+  const set: { run: () => void; ms: number; handle: number }[] = [];
+  let next = 0;
+  return {
+    set,
+    timer: {
+      set(run: () => void, ms: number) {
+        next += 1;
+        set.push({ run, ms, handle: next });
+        return next;
+      },
+      clear(handle: unknown) {
+        const i = set.findIndex((s) => s.handle === handle);
+        if (i >= 0) set.splice(i, 1);
+      },
+    },
+    /** Runs the one timer that is set, and the refresh it starts. */
+    async fire(app: App): Promise<number> {
+      expect(set).toHaveLength(1);
+      const { run, ms } = set.shift()!;
+      run();
+      await app.refresh();
+      return ms;
+    },
+  };
+}
+
+describe('tries again while offline in front', () => {
+  it('asks again with growing waits and becomes live without a change of view', async () => {
+    const fake = new FakeSource();
+    const clock = manualTimer();
+    const app = new App(deps(fake, { timer: clock.timer, visible: () => true }));
+    await app.start(null);
+    expect(clock.set).toHaveLength(0);
+    fake.offline = true;
+    await app.refresh();
+    expect(app.connection).toBe('offline');
+    expect(await clock.fire(app)).toBe(5_000);
+    expect(await clock.fire(app)).toBe(15_000);
+    expect(await clock.fire(app)).toBe(60_000);
+    expect(await clock.fire(app)).toBe(60_000);
+    fake.offline = false;
+    expect(await clock.fire(app)).toBe(60_000);
+    expect(app.connection).toBe('live');
+    expect(clock.set).toHaveLength(0);
+    // Offline again later: the waits start over.
+    fake.offline = true;
+    await app.refresh();
+    expect(clock.set.map((s) => s.ms)).toEqual([5_000]);
+  });
+
+  it('sets one try at a time, also when several runs end offline', async () => {
+    const fake = new FakeSource();
+    const clock = manualTimer();
+    const app = new App(deps(fake, { timer: clock.timer, visible: () => true }));
+    await app.start(null);
+    fake.offline = true;
+    await app.refresh();
+    await app.refresh();
+    await app.refresh();
+    expect(clock.set).toHaveLength(1);
+  });
+
+  it('asks nothing in the background, and plans again when the page is back', async () => {
+    const fake = new FakeSource();
+    const clock = manualTimer();
+    let shown = true;
+    const app = new App(deps(fake, { timer: clock.timer, visible: () => shown }));
+    await app.start(null);
+    fake.offline = true;
+    await app.refresh();
+    expect(clock.set).toHaveLength(1);
+    shown = false;
+    app.pause();
+    expect(clock.set).toHaveLength(0);
+    await app.refresh();
+    expect(clock.set).toHaveLength(0);
+    shown = true;
+    await app.refresh();
+    expect(clock.set).toHaveLength(1);
+  });
+
+  it('a phone that started offline (login still to make) tries too, and offers the button', async () => {
+    const fake = new FakeSource();
+    const clock = manualTimer();
+    const device = fakeDevice(true);
+    device.offline = true;
+    const app = new App(deps(fake, { fake: false, device, source: sourceFor(fake, new Set()), timer: clock.timer, visible: () => true }));
+    await app.start(null);
+    expect(app.connection).toBe('offline');
+    expect(app.paired).toBe(false);
+    expect(app.canRetry).toBe(true);
+    expect(clock.set).toHaveLength(1);
+    device.offline = false;
+    await clock.fire(app);
+    expect(app.connection).toBe('live');
+  });
+
+  it('no tries on the pairing screen', async () => {
+    const fake = new FakeSource();
+    const clock = manualTimer();
+    const app = new App(deps(fake, { fake: false, device: fakeDevice(false), source: sourceFor(fake, new Set()), timer: clock.timer, visible: () => true }));
+    await app.start(null);
+    expect(app.screen).toBe('pair');
+    await app.refresh();
+    expect(clock.set).toHaveLength(0);
+    expect(app.canRetry).toBe(false);
+  });
+});

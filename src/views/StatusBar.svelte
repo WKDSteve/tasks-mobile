@@ -19,7 +19,7 @@
   {:else}
     <span class="bad">○ {t('conn.offline_none')}</span>
   {/if}
-  {#if app.paired && app.connection !== 'checking'}
+  {#if app.canRetry && app.connection !== 'checking'}
     <button onclick={() => void app.refresh()}>{t('conn.refresh')}</button>
   {/if}
 </div>
