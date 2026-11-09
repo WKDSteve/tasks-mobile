@@ -1,7 +1,8 @@
 # Using tasks-mobile on a phone
 
-> Needs a tasks-desktop from its rolling build `latest` on (it serves this page under `/m/`). Not yet tried on a real
-> phone: tell what does not work as written here.
+> Needs a tasks-desktop from its rolling build `latest` on (it serves this page under `/m/`). Tried on an Android phone
+> (Chrome, installed as an app) over USB; the SSH tunnel of Termux is not tried yet: tell what does not work as written
+> here.
 
 ## 1. The tunnel
 
@@ -14,6 +15,9 @@ ssh -N -L 17615:127.0.0.1:17615 user@your-pc
 
 `17615` is the hub's usual port; `tasks-hub open` on the PC prints the one it runs on. Do not forward the port with
 `-g`: whoever can use the local port on the phone can reach the pairing page.
+
+Over a USB cable instead, with USB debugging on and `adb` on the PC: `adb reverse tcp:17615 tcp:17615`. A cable that
+comes loose takes the forward with it; set it again.
 
 `http://127.0.0.1` counts as a secure origin in Chrome, so the app can be installed and works offline over this tunnel
 without a certificate.
