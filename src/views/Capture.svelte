@@ -10,6 +10,9 @@
   import type { Shared } from '../lib/share';
 
   let { app, t, shared }: { app: App; t: Translate; shared: Shared | null } = $props();
+  // The problems of an earlier try belong to that form: a form opened anew starts without them (once, on mounting).
+  // svelte-ignore state_referenced_locally
+  app.problems = [];
 
   // svelte-ignore state_referenced_locally
   let title = $state(shared?.title ?? '');

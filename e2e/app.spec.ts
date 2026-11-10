@@ -58,6 +58,10 @@ test('names the problems of a capture and creates nothing', async ({ page }) => 
   await page.getByRole('button', { name: 'New', exact: true }).click();
   await page.getByRole('button', { name: 'Create' }).click();
   await expect(page.getByTestId('problems')).toContainText('The title is missing.');
+  // Opened anew, the form starts without the problems of the last try.
+  await page.getByRole('button', { name: 'List' }).click();
+  await page.getByRole('button', { name: 'New', exact: true }).click();
+  await expect(page.getByTestId('problems')).toHaveCount(0);
 });
 
 test('keeps a capture offline, then sends it (MOB-08)', async ({ page }) => {
