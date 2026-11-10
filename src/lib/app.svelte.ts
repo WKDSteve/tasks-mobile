@@ -1,6 +1,7 @@
 // The state of the page and what the user can do. Everything outside the page (the hub, the phone's storage, the
 // clock, the ids) comes in through `AppDeps`, so the tests run it without a browser (MTST-03).
 
+import { assetName, checkAttachment, type AttachmentProblem, type AttachmentRef, type FileStore, type NewAttachment } from './attach';
 import { checkDraft, type Draft, type DraftProblem } from './capture';
 import { ShapeError } from './parse';
 import { WriteQueue, type Pending, type QueueStore } from './queue';
@@ -25,6 +26,8 @@ export interface AppDeps {
   fake: boolean;
   viewStore: CacheStore<KeptView>;
   queueStore: QueueStore;
+  /** Where the files of a capture wait until they are sent (memory when not given). */
+  fileStore?: FileStore;
   now(): Date;
   newId(): string;
   /** Timers for the next try while offline; without them (the tests that do not ask for it) no try is planned. */
@@ -90,6 +93,8 @@ export class App {
   notice = $state<Notice | null>(null);
   engineProblem = $state<string | null>(null);
   problems = $state<DraftProblem[]>([]);
+  /** Why a file of the capture was not taken. */
+  fileProblem = $state<AttachmentProblem | 'store' | null>(null);
   pending = $state<WriteQueue['items']>([]);
   rights: ReadonlySet<Right> = DEFAULT_RIGHTS;
   /** Counts the writes of the task page the PC refused as a conflict: the page sets its choices back to the new state. */
@@ -101,10 +106,16 @@ export class App {
   private source: DataSource | null = null;
 
   constructor(private readonly deps: AppDeps) {
-    this.queue = new WriteQueue(deps.queueStore, deps.newId, deps.now, () => {
-      this.pending = this.queue.items.map((i) => ({ ...i }));
-      this.followQueued();
-    });
+    this.queue = new WriteQueue(
+      deps.queueStore,
+      deps.newId,
+      deps.now,
+      () => {
+        this.pending = this.queue.items.map((i) => ({ ...i }));
+        this.followQueued();
+      },
+      deps.fileStore,
+    );
   }
 
   /**
@@ -364,7 +375,7 @@ export class App {
   }
 
   /** Queue a write and try to send it now; the list changes only with the hub's answer (MOB-07). */
-  private async enqueue(op: Op, area: string, label: string): Promise<Pending | null> {
+  private async enqueue(op: Op, area: string, label: string, files: NewAttachment[] = []): Promise<Pending | null> {
     if (!allows(this.rights, op)) {
       this.notice = { key: 'task.not_allowed', tone: 'error' };
       return null;
@@ -373,26 +384,69 @@ export class App {
       this.notice = { key: 'queue.full', tone: 'error' };
       return null;
     }
-    const item = await this.queue.add(op, area, label);
+    const refs = await this.keepFiles(files);
+    if (refs === null) return null;
+    const item = await this.queue.add(op, area, label, refs);
     if (this.source && this.connection !== 'offline') await this.refresh();
     return item;
   }
 
-  async capture(draft: Draft): Promise<boolean> {
+  /**
+   * The files of a capture into the phone's store, each under a key of its own, before the write that names them is
+   * queued; `null` (and nothing kept) when one cannot be kept.
+   */
+  private async keepFiles(files: NewAttachment[]): Promise<AttachmentRef[] | null> {
+    const store = this.queue.fileStore;
+    const at = this.deps.now();
+    const refs: AttachmentRef[] = [];
+    try {
+      for (const [i, file] of files.entries()) {
+        const ref: AttachmentRef = {
+          key: this.deps.newId(),
+          name: assetName(file.kind, file.blob.type, at, i + 1),
+          type: file.blob.type.slice(0, 100),
+          size: file.blob.size,
+          kind: file.kind,
+        };
+        await store.put(ref.key, file.blob);
+        refs.push(ref);
+      }
+      return refs;
+    } catch {
+      for (const ref of refs) await store.delete(ref.key);
+      this.fileProblem = 'store';
+      return null;
+    }
+  }
+
+  /** Check a file the person picked or recorded against those of the capture so far; the problem, if any. */
+  checkFile(file: NewAttachment, count: number): AttachmentProblem | null {
+    const problem = checkAttachment(file, count);
+    this.fileProblem = problem;
+    return problem;
+  }
+
+  async capture(draft: Draft, files: NewAttachment[] = []): Promise<boolean> {
     const checked = checkDraft(draft, this.areas);
     if (!checked.ok) {
       this.problems = checked.problems;
       return false;
     }
     this.problems = [];
+    // The files again, as the form may not have been the only way in.
+    for (const [i, file] of files.entries()) if (this.checkFile(file, i) !== null) return false;
+    this.fileProblem = null;
     this.busy = true;
     try {
-      const item = await this.enqueue(checked.op, checked.op.area, checked.op.title);
+      const item = await this.enqueue(checked.op, checked.op.area, checked.op.title, files);
       if (!item) return false;
       // Say what became of it: taken by the engine (gone from the queue), still waiting, or not taken.
       const left = this.queue.items.find((i) => i.clientOpId === item.clientOpId);
       const params = { title: checked.op.title };
-      if (!left) this.notice = { key: 'capture.created', params, tone: 'info' };
+      // Made, but a file of it still waits (no answer yet, or refused): it is under "Waiting".
+      const filesLeft = !left && this.queue.items.some((i) => i.op.op === 'upload' && (item.files ?? []).some((f) => i.op.op === 'upload' && i.op.file.key === f.key));
+      if (filesLeft) this.notice = { key: 'capture.files_wait', params, tone: 'error' };
+      else if (!left) this.notice = { key: 'capture.created', params, tone: 'info' };
       else if (left.state === 'waiting' || left.state === 'sending') {
         this.notice = { key: 'capture.queued', params, tone: 'info', op: item.clientOpId };
       }

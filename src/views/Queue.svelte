@@ -13,7 +13,11 @@
     const label = markHidden(item.label);
     switch (item.op.op) {
       case 'new':
-        return t('queue.op.new', { label });
+        return item.files?.length
+          ? t('queue.op.new_files', { label, n: item.files.length })
+          : t('queue.op.new', { label });
+      case 'upload':
+        return t('queue.op.upload', { label, name: item.op.file.name });
       case 'set':
         return t('queue.op.set', { label, status: t(`status.${item.op.patch.status}` as TextKey) });
       case 'answer':

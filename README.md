@@ -21,8 +21,10 @@ What is there:
   due or reminder day has come, and the engine's counts per status over the areas shown here (it says when areas are
   missing). Offline it shows the kept copy with its time.
 - **List** of the open tasks of the areas that may be shown on a phone, with a filter by area and words.
-- **Capture**: title, area, one sentence of context. Also as a **share target** on Android: share a link or a text
-  from another app to tasks, and the form is filled (it never creates a task by itself).
+- **Capture**: title, area, one sentence of context, and up to three attachments: a **photo** (camera or gallery) or a
+  **voice note** (recorded in the app, heard before it is sent; up to 25 MB each). The files are sent to the task once
+  the engine made it. Also as a **share target** on Android: share a link or a text from another app to tasks, and the
+  form is filled (it never creates a task by itself).
 - **A task**: its text, its status (set it), its open questions (answer them), and finishing it after the engine said
   what that sets off (a plan it closes, tasks it frees).
 - **Offline**: the last list stays readable; what you create or change offline waits in a queue and is sent when the

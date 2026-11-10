@@ -60,6 +60,13 @@ or with **Send now**).
   again on the new version.
 - **refused**: the hub or the engine said no, with its words.
 
+Attachments of a new task wait with it and are sent after it, to the task the engine made. A file that did not
+arrive (refused, or its answer lost) stays under **Waiting** on its own as "attachment ..."; the task is there
+already. The phone keeps a file only until the PC took it, and deletes every file when it is disconnected.
+
+The microphone is asked for only when you press **Voice note**, and a recording stops when the app goes to the
+background or after five minutes.
+
 ## 5. Disconnect
 
 **Disconnect and delete the data** (at the bottom of **Waiting**, after a question) removes the device key, the kept list

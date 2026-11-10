@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { restore, WriteQueue, type Pending, type QueueStore } from './queue';
+import { memoryFileStore, type AttachmentRef } from './attach';
+import { restore, WriteQueue, type Pending, type QueueOp, type QueueStore } from './queue';
 import { AnswerLost, HubRefused, Unpaired, Unreachable, type DataSource } from './source';
 import type { Op, OpOutcome } from './types';
 
@@ -17,7 +18,7 @@ function memory(): QueueStore & { saved: Pending[] | null } {
   return box;
 }
 
-function source(answers: ((op: Op) => OpOutcome | Error)[]): DataSource & { calls: string[] } {
+function source(answers: ((op: QueueOp) => OpOutcome | Error)[]): DataSource & { calls: string[] } {
   const calls: string[] = [];
   return {
     kind: 'fake',
@@ -35,6 +36,14 @@ function source(answers: ((op: Op) => OpOutcome | Error)[]): DataSource & { call
       const next = answers.shift();
       if (!next) throw new Error('no answer left');
       const answer = next(op);
+      if (answer instanceof Error) throw answer;
+      return answer;
+    },
+    upload: async (id, file, name) => {
+      calls.push(`upload ${id} ${name} ${file.size}`);
+      const next = answers.shift();
+      if (!next) throw new Error('no answer left');
+      const answer = next({ op: 'upload', id, file: { key: 'k0000000', name, type: file.type, size: file.size, kind: 'photo' } });
       if (answer instanceof Error) throw answer;
       return answer;
     },
@@ -194,5 +203,120 @@ describe('restore (MSEC-13: what was kept is untrusted)', () => {
 
   it('drops writes of an area that may no longer be shown', () => {
     expect(restore([good], new Set(['kitchen']))).toEqual([]);
+  });
+});
+
+describe('files of a new task', () => {
+  const photo: AttachmentRef = { key: 'file-0001', name: 'photo-2026-01-01-1200.jpg', type: 'image/jpeg', size: 3, kind: 'photo' };
+  const voice: AttachmentRef = { key: 'file-0002', name: 'voice-2026-01-01-1200.webm', type: 'audio/webm', size: 4, kind: 'voice' };
+
+  async function queueWithFiles() {
+    const files = memoryFileStore();
+    await files.put(photo.key, new Blob(['abc'], { type: 'image/jpeg' }));
+    await files.put(voice.key, new Blob(['abcd'], { type: 'audio/webm' }));
+    const store = memory();
+    const q = new WriteQueue(store, ids, clock, () => {}, files);
+    await q.add(NEW, 'garden', 'A', [photo, voice]);
+    return { q, files, store };
+  }
+
+  it('sends the files after the new task, to the id the engine gave, and lets them go when taken', async () => {
+    const { q, files } = await queueWithFiles();
+    const src = source([() => ({ ok: true, id: 'garden/a' }), () => ({ ok: true, id: 'garden/a' }), () => ({ ok: true, id: 'garden/a' })]);
+    expect(await q.flush(src)).toEqual({ sent: 3, stopped: null });
+    expect(src.calls.slice(1)).toEqual(['upload garden/a photo-2026-01-01-1200.jpg 3', 'upload garden/a voice-2026-01-01-1200.webm 4']);
+    expect(q.items).toEqual([]);
+    expect(files.files.size).toBe(0);
+  });
+
+  it('never sends a file before the task is made: offline both wait, the file with the task', async () => {
+    const { q, files, store } = await queueWithFiles();
+    await q.flush(source([() => new Unreachable()]));
+    expect(q.items).toHaveLength(1);
+    expect(q.items[0]?.files?.map((f) => f.key)).toEqual([photo.key, voice.key]);
+    expect(store.saved?.[0]?.files).toHaveLength(2);
+    expect(files.files.size).toBe(2);
+  });
+
+  it('keeps the task when a file is refused, and the file waits visibly with the words of the hub', async () => {
+    const { q, files } = await queueWithFiles();
+    const src = source([
+      () => ({ ok: true, id: 'garden/a' }),
+      () => new HubRefused(409, 'vault_changed', 'another vault was chosen'),
+      () => ({ ok: true, id: 'garden/a' }),
+    ]);
+    await q.flush(src);
+    expect(q.items).toHaveLength(1);
+    expect(q.items[0]).toMatchObject({ state: 'refused', code: 'vault_changed', op: { op: 'upload', id: 'garden/a', file: photo } });
+    expect([...files.files.keys()]).toEqual([photo.key]);
+    // Sent again on request, then gone with its file.
+    await q.retry(q.items[0]!.clientOpId);
+    await q.flush(source([() => ({ ok: true, id: 'garden/a' })]));
+    expect(q.items).toEqual([]);
+    expect(files.files.size).toBe(0);
+  });
+
+  it('a file whose answer was lost is never sent again by itself', async () => {
+    const { q } = await queueWithFiles();
+    await q.flush(source([() => ({ ok: true, id: 'garden/a' }), () => new AnswerLost(), () => ({ ok: true, id: 'garden/a' })]));
+    expect(q.items.map((i) => i.state)).toEqual(['unknown']);
+    const again = source([]);
+    await q.flush(again);
+    expect(again.calls).toEqual([]);
+  });
+
+  it('a file that is gone from the phone is refused, not sent empty', async () => {
+    const { q, files } = await queueWithFiles();
+    files.files.delete(photo.key);
+    const src = source([() => ({ ok: true, id: 'garden/a' }), () => ({ ok: true, id: 'garden/a' })]);
+    await q.flush(src);
+    expect(q.items).toHaveLength(1);
+    expect(q.items[0]).toMatchObject({ state: 'refused', code: 'file_gone' });
+    expect(src.calls.some((c) => c.includes(photo.name))).toBe(false);
+  });
+
+  it('without the id of the engine, a file has no task to go to', async () => {
+    const { q, files } = await queueWithFiles();
+    await q.flush(source([() => ({ ok: true, id: null })]));
+    expect(q.items.map((i) => [i.state, i.code])).toEqual([['refused', 'no_id'], ['refused', 'no_id']]);
+    expect(files.files.size).toBe(0);
+  });
+
+  it('dropping a new task drops its files; unpairing deletes every file (MSEC-12)', async () => {
+    const { q, files } = await queueWithFiles();
+    await q.drop(q.items[0]!.clientOpId);
+    expect(files.files.size).toBe(0);
+    const second = await queueWithFiles();
+    await second.q.clear();
+    expect(second.files.files.size).toBe(0);
+  });
+
+  it('reads files back only as they were written, and collects files no write names (MSEC-13)', async () => {
+    const { store, files } = await queueWithFiles();
+    await files.put('orphan-0001', new Blob(['x']));
+    const raw = store.saved as unknown as Record<string, unknown>[];
+    (raw[0]!['files'] as unknown[]).push({ key: '../x', name: 'a', type: 'text/html', size: 1, kind: 'photo' });
+    const q = new WriteQueue(store, ids, clock, () => {}, files);
+    await q.load(new Set(['garden']));
+    expect(q.items[0]?.files?.map((f) => f.key)).toEqual([photo.key, voice.key]);
+    expect([...files.files.keys()].sort()).toEqual([photo.key, voice.key]);
+    // An area that may not be shown any more takes its files with it.
+    const hidden = new WriteQueue(store, ids, clock, () => {}, files);
+    await hidden.load(new Set(['kitchen']));
+    expect(hidden.items).toEqual([]);
+    expect(files.files.size).toBe(0);
+  });
+
+  it('an upload read back must go to a task of its own area', () => {
+    const item = {
+      clientOpId: 'id-00000001',
+      op: { op: 'upload', id: 'secret/x', file: photo },
+      area: 'garden',
+      label: 'A',
+      queuedAt: '2026-01-01T00:00:00Z',
+      state: 'waiting',
+    };
+    expect(restore([item], null)).toEqual([]);
+    expect(restore([{ ...item, op: { ...item.op, id: 'garden/x' } }], null)).toHaveLength(1);
   });
 });

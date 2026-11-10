@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { App, pairingCodeOf, type AppDeps, type DeviceAccess, type DeviceLogin } from './app.svelte';
 import { FakeSource } from './fakeSource';
+import { memoryFileStore } from './attach';
 import { memoryStore } from './storage';
 import type { KeptView } from './storage';
 import type { Pending } from './queue';
@@ -58,6 +59,7 @@ function sourceFor(fake: FakeSource, dead: Set<string | null>): (token: string |
       task: (id) => gate(() => fake.task(id)),
       write: (id, op) => gate(() => fake.write(id, op)),
       donePreview: (id) => gate(() => fake.donePreview(id)),
+      upload: (id, file, name) => gate(() => fake.upload(id, file, name)),
     };
   };
 }
@@ -585,5 +587,56 @@ describe('tries again while offline in front', () => {
     await app.refresh();
     expect(clock.set).toHaveLength(0);
     expect(app.canRetry).toBe(false);
+  });
+});
+
+describe('capture with files', () => {
+  const photo = () => new Blob(['png!'], { type: 'image/png' });
+
+  it('makes the task, then sends the file to it, and keeps no file after', async () => {
+    const fake = new FakeSource();
+    const files = memoryFileStore();
+    const app = new App(deps(fake, { fileStore: files }));
+    await app.start(null);
+    expect(await app.capture({ area: 'garden', title: 'With photo', context: '' }, [{ blob: photo(), kind: 'photo' }])).toBe(true);
+    expect(fake.writes.map((w) => w.op.op)).toEqual(['new']);
+    expect(fake.uploads).toEqual([{ id: 'garden/with-photo', name: expect.stringMatching(/^photo-\d{4}-\d{2}-\d{2}-\d{4}\.png$/), type: 'image/png', size: 4 }]);
+    expect(app.notice).toMatchObject({ key: 'capture.created' });
+    expect(files.files.size).toBe(0);
+  });
+
+  it('says so when the task is made but a file waits', async () => {
+    const fake = new FakeSource();
+    fake.refuseNextUpload = true;
+    const app = new App(deps(fake, { fileStore: memoryFileStore() }));
+    await app.start(null);
+    await app.capture({ area: 'garden', title: 'Refused file', context: '' }, [{ blob: photo(), kind: 'photo' }]);
+    expect(app.notice).toMatchObject({ key: 'capture.files_wait', tone: 'error' });
+    expect(app.pending.map((p) => [p.op.op, p.state])).toEqual([['upload', 'refused']]);
+    expect(app.view?.tasks.some((t) => t.id === 'garden/refused-file')).toBe(true);
+  });
+
+  it('creates nothing when a file cannot be kept on the phone (storage full)', async () => {
+    const fake = new FakeSource();
+    const files = memoryFileStore();
+    files.put = async () => {
+      throw new Error('QuotaExceededError');
+    };
+    const app = new App(deps(fake, { fileStore: files }));
+    await app.start(null);
+    expect(await app.capture({ area: 'garden', title: 'No room', context: '' }, [{ blob: photo(), kind: 'photo' }])).toBe(false);
+    expect(app.fileProblem).toBe('store');
+    expect(fake.writes).toEqual([]);
+    expect(app.pending).toEqual([]);
+  });
+
+  it('refuses a file beyond the limits before anything is kept', async () => {
+    const fake = new FakeSource();
+    const app = new App(deps(fake, { fileStore: memoryFileStore() }));
+    await app.start(null);
+    const html = new Blob(['<b>'], { type: 'text/html' });
+    expect(await app.capture({ area: 'garden', title: 'Bad file', context: '' }, [{ blob: html, kind: 'photo' }])).toBe(false);
+    expect(app.fileProblem).toBe('wrong_type');
+    expect(fake.writes).toEqual([]);
   });
 });

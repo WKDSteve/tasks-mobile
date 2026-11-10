@@ -7,7 +7,12 @@
 //
 // The queue survives the end of the app (MUI-04): it is kept in the phone's storage after every change. A write
 // that was being sent when the app was ended is `unknown` after the restart.
+//
+// A new task may carry files (a photo, a voice note). They wait in the `FileStore`; once the engine made the task,
+// each becomes an `upload` of its own in the place of the `new`, to the id the engine gave. A file that could not be
+// sent stays visible in the queue; the task stays as it is.
 
+import { memoryFileStore, restoreRef, type AttachmentRef, type FileStore } from './attach';
 import { isAreaName, isTaskId } from './parse';
 import { AnswerLost, HubRefused, Unpaired, Unreachable, type DataSource } from './source';
 import type { Op, OpErrorCode } from './types';
@@ -15,9 +20,21 @@ import { STATUSES } from './types';
 
 export type PendingState = 'waiting' | 'sending' | 'unknown' | 'conflict' | 'refused';
 
+/** A file of a task the engine made, to send to the hub's upload route. */
+export interface UploadOp {
+  op: 'upload';
+  id: string;
+  file: AttachmentRef;
+}
+
+/** What the queue sends: an operation of the engine, or a file. */
+export type QueueOp = Op | UploadOp;
+
 export interface Pending {
   clientOpId: string;
-  op: Op;
+  op: QueueOp;
+  /** The files of a new task, sent after it was made. */
+  files?: AttachmentRef[];
   /** The area the write goes to (a new task) or is in (a change): only shown areas are ever queued. */
   area: string;
   /** What the list shows for it: the title of the task. */
@@ -44,7 +61,7 @@ export interface FlushReport {
 
 const MAX_ITEMS = 200;
 
-function validOp(value: unknown): value is Op {
+function validOp(value: unknown): value is QueueOp {
   if (typeof value !== 'object' || value === null) return false;
   const op = value as Record<string, unknown>;
   const ifMatch = op['if_match'] === undefined || typeof op['if_match'] === 'string';
@@ -59,6 +76,8 @@ function validOp(value: unknown): value is Op {
       return isTaskId(op['id']) && typeof op['question'] === 'string' && Number.isInteger(op['option']) && ifMatch;
     case 'done':
       return isTaskId(op['id']) && typeof op['confirm'] === 'string';
+    case 'upload':
+      return isTaskId(op['id']) && restoreRef(op['file']) !== null;
     default:
       return false;
   }
@@ -78,9 +97,16 @@ export function restore(raw: unknown, shownAreas: ReadonlySet<string> | null): P
     // An area that may no longer be shown here takes its writes with it (the class changed on the PC).
     if (shownAreas !== null && !shownAreas.has(e['area'])) continue;
     const state = e['state'] as PendingState;
+    const op = e['op'];
+    // Only a new task carries files; a file that does not read back is dropped (its blob is collected on load).
+    const files = op.op === 'new' && Array.isArray(e['files'])
+      ? e['files'].map(restoreRef).filter((f): f is AttachmentRef => f !== null)
+      : [];
+    if (op.op === 'upload' && !op.id.startsWith(`${e['area']}/`)) continue;
     items.push({
       clientOpId: e['clientOpId'],
-      op: e['op'],
+      op: op.op === 'upload' ? { op: 'upload', id: op.id, file: restoreRef(op.file)! } : op,
+      ...(files.length > 0 ? { files } : {}),
       area: e['area'],
       label: e['label'].slice(0, 500),
       queuedAt: e['queuedAt'],
@@ -103,11 +129,16 @@ export class WriteQueue {
     private readonly now: () => Date,
     /** Called after every change of `items` (the page redraws). */
     private readonly changed: () => void = () => {},
+    /** Where the files of the writes wait. */
+    readonly fileStore: FileStore = memoryFileStore(),
   ) {}
 
   async load(shownAreas: ReadonlySet<string> | null): Promise<void> {
     this.items = restore(await this.store.load(), shownAreas);
     this.changed();
+    // A file no write names any more (dropped, sent, or of an area that is not shown now) does not stay (MSEC-12).
+    const named = new Set(this.items.flatMap(keysOf));
+    for (const key of await this.fileStore.keys()) if (!named.has(key)) await this.fileStore.delete(key);
   }
 
   private async persist(): Promise<void> {
@@ -119,30 +150,71 @@ export class WriteQueue {
     return this.items.length >= MAX_ITEMS;
   }
 
-  /** Put a write into the queue. */
-  async add(op: Op, area: string, label: string): Promise<Pending> {
+  /** Put a write into the queue; a new task with the files that are to follow it (kept in the `FileStore` already). */
+  async add(op: Op, area: string, label: string, files: AttachmentRef[] = []): Promise<Pending> {
     if (this.full) throw new Error('queue full');
-    const item: Pending = { clientOpId: this.newId(), op, area, label, queuedAt: this.now().toISOString(), state: 'waiting' };
+    const item: Pending = {
+      clientOpId: this.newId(),
+      op,
+      ...(op.op === 'new' && files.length > 0 ? { files } : {}),
+      area,
+      label,
+      queuedAt: this.now().toISOString(),
+      state: 'waiting',
+    };
     this.items.push(item);
     await this.persist();
     return item;
   }
 
-  /** Send what waits, one after the other, in the order it was queued. Only one run at a time. */
+  /** The files of a new task become uploads to the id the engine gave, in its place in the queue. */
+  private followers(item: Pending, id: string | null): Pending[] {
+    return (item.files ?? []).map((file) => ({
+      clientOpId: this.newId(),
+      op: { op: 'upload', id: id ?? `${item.area}/unknown`, file },
+      area: item.area,
+      label: item.label,
+      queuedAt: this.now().toISOString(),
+      // Without the id the engine gave, a file has no task to go to.
+      ...(id !== null && id.startsWith(`${item.area}/`)
+        ? { state: 'waiting' as const }
+        : { state: 'refused' as const, code: 'no_id', message: 'the engine named no task for the file' }),
+    }));
+  }
+
+  /** Send one file: it is read from the phone's store first; a file that is gone is refused, never sent empty. */
+  private async upload(source: DataSource, op: UploadOp) {
+    const blob = await this.fileStore.get(op.file.key);
+    if (!blob) throw new HubRefused(0, 'file_gone', 'the file is no longer on this phone');
+    return source.upload(op.id, blob, op.file.name);
+  }
+
+  /**
+   * Send what waits, one after the other, in the order it was queued; the uploads a new task leaves in its place
+   * follow in the same run. Only one run at a time.
+   */
   async flush(source: DataSource): Promise<FlushReport> {
     if (this.flushing) return { sent: 0, stopped: null };
     this.flushing = true;
     let sent = 0;
+    const tried = new Set<Pending>();
     try {
-      for (const item of this.items.filter((i) => i.state === 'waiting')) {
-        // Dropped or cleared while an earlier write was on its way: it is not sent.
-        if (!this.items.includes(item) || item.state !== 'waiting') continue;
+      for (;;) {
+        // The first that waits and was not tried in this run; dropped or cleared ones are not in `items` any more.
+        const item = this.items.find((i) => i.state === 'waiting' && !tried.has(i));
+        if (!item) break;
+        tried.add(item);
         item.state = 'sending';
         await this.persist();
         try {
-          const outcome = await source.write(item.clientOpId, item.op);
+          const op = item.op;
+          const outcome = op.op === 'upload' ? await this.upload(source, op) : await source.write(item.clientOpId, op);
           if (outcome.ok) {
-            this.items = this.items.filter((i) => i !== item);
+            const at = this.items.indexOf(item);
+            const follow = op.op === 'new' ? this.followers(item, outcome.id) : [];
+            if (at >= 0) this.items.splice(at, 1, ...follow);
+            if (op.op === 'upload') await this.fileStore.delete(op.file.key);
+            for (const f of follow) if (f.state === 'refused' && f.op.op === 'upload') await this.fileStore.delete(f.op.file.key);
             sent += 1;
           } else {
             item.state = outcome.code === 'conflict' ? 'conflict' : 'refused';
@@ -200,11 +272,13 @@ export class WriteQueue {
     await this.persist();
   }
 
-  /** The user drops a write (it arrived after all, or it is not wanted any more). */
+  /** The user drops a write (it arrived after all, or it is not wanted any more); its files go with it. */
   async drop(clientOpId: string): Promise<void> {
-    const before = this.items.length;
-    this.items = this.items.filter((i) => i.clientOpId !== clientOpId || i.state === 'sending');
-    if (this.items.length !== before) await this.persist();
+    const gone = this.items.filter((i) => i.clientOpId === clientOpId && i.state !== 'sending');
+    if (gone.length === 0) return;
+    this.items = this.items.filter((i) => !gone.includes(i));
+    await this.persist();
+    for (const key of gone.flatMap(keysOf)) await this.fileStore.delete(key);
   }
 
   /** Forget everything (the phone is unpaired: MSEC-12). */
@@ -212,5 +286,12 @@ export class WriteQueue {
     this.items = [];
     this.changed();
     await this.store.clear();
+    await this.fileStore.clear();
   }
+}
+
+/** The keys of the files a write names. */
+function keysOf(item: Pending): string[] {
+  if (item.op.op === 'upload') return [item.op.file.key];
+  return (item.files ?? []).map((f) => f.key);
 }

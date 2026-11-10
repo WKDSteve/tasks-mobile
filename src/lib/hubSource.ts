@@ -10,6 +10,8 @@ import type { DataClass, DonePreview, HubHello, Op, OpErrorCode, OpOutcome, Task
 export const READ_TIMEOUT_MS = 15_000;
 /** How long a write may take; after that its fate is unknown (`AnswerLost`). */
 export const WRITE_TIMEOUT_MS = 30_000;
+/** How long a file may take on its way (a voice note over a slow tunnel); after that its fate is unknown. */
+export const UPLOAD_TIMEOUT_MS = 120_000;
 /** How many alternatives the page asks `next` for (the hub allows 0 to 10). */
 export const NEXT_ASKED = 10;
 
@@ -111,6 +113,28 @@ export class HubSource implements DataSource {
     }
     // The engine's refusal of the whole request comes as `{error: {code, message, retryable}}` with 400/403/404/409
     // (`tasks-hub/src/server/answer.rs`); that is its verdict on the write, not a failure of the hub.
+    if ([400, 403, 404, 409].includes(response.status)) {
+      const verdict = await engineVerdict(response);
+      if (verdict) return verdict;
+    }
+    return opOutcome(await this.body(response));
+  }
+
+  async upload(id: string, file: Blob, name: string): Promise<OpOutcome> {
+    let response: Response;
+    try {
+      response = await this.client.request(`/api/tasks/upload?id=${idParam(id)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/octet-stream', 'X-Upload-Name': encodeURIComponent(name) },
+        body: file,
+        signal: AbortSignal.timeout(UPLOAD_TIMEOUT_MS),
+      });
+    } catch (error) {
+      // As for a write: only a file that never left may be sent again by itself.
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) throw new Unreachable(error);
+      throw new AnswerLost(error);
+    }
+    // The engine's verdict on the attach comes as a result (200) or as its refusal in the hub's error body.
     if ([400, 403, 404, 409].includes(response.status)) {
       const verdict = await engineVerdict(response);
       if (verdict) return verdict;

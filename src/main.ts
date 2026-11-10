@@ -4,6 +4,7 @@ import { deviceLogin, indexedDbDeviceStore, pairDevice, type DeviceDeps } from '
 import { takePairingCode } from 'appkit-ui/pair';
 import App from './App.svelte';
 import { App as AppState, type AppDeps, type DeviceAccess } from './lib/app.svelte';
+import { indexedDbFileStore, memoryFileStore } from './lib/attach';
 import { HubSource } from './lib/hubSource';
 import { readShare, withoutShare } from './lib/share';
 import type { DataSource } from './lib/source';
@@ -73,6 +74,7 @@ async function main(): Promise<void> {
     fake: __FAKE__,
     viewStore: db ? viewStore(db) : memoryStore(),
     queueStore: db ? queueStore(db) : memoryStore(),
+    fileStore: db ? indexedDbFileStore(db) : memoryFileStore(),
     now: () => new Date(),
     newId: () => crypto.randomUUID(),
     timer: { set: (run, ms) => window.setTimeout(run, ms), clear: (handle) => window.clearTimeout(handle as number) },

@@ -35,6 +35,10 @@ export interface FakeControls {
   touch(id: string): void;
   /** The writes the fake received, in order. */
   readonly writes: { clientOpId: string; op: Op }[];
+  /** The files the fake took, by task: name, type and size. */
+  readonly uploads: { id: string; name: string; type: string; size: number }[];
+  /** The next upload is refused by the hub (a vault that changed while the file was on its way). */
+  refuseNextUpload: boolean;
 }
 
 const HEAD = {
@@ -149,6 +153,8 @@ export class FakeSource implements DataSource, FakeControls {
     for (const go of this.held.splice(0)) go();
   }
   readonly writes: { clientOpId: string; op: Op }[] = [];
+  readonly uploads: { id: string; name: string; type: string; size: number }[] = [];
+  refuseNextUpload = false;
   private tasks = initialTasks();
   private rev = 1;
   private seen = new Map<string, OpOutcome>();
@@ -319,6 +325,28 @@ export class FakeSource implements DataSource, FakeControls {
     const outcome = opOutcome(this.apply(op));
     this.seen.set(clientOpId, outcome);
     if (outcome.ok) this.rev += 1;
+    if (this.loseNextAnswer) {
+      this.loseNextAnswer = false;
+      throw new AnswerLost();
+    }
+    return outcome;
+  }
+
+  async upload(id: string, file: Blob, name: string): Promise<OpOutcome> {
+    this.reachable();
+    if (this.refuseNextUpload) {
+      this.refuseNextUpload = false;
+      throw new HubRefused(409, 'vault_changed', 'another vault was chosen while the file was on its way: nothing was attached');
+    }
+    const t = this.tasks.find((x) => x.id === id);
+    if (!t) return opOutcome(this.result(false, null, { code: 'not_found', message: 'no such task' }));
+    // Like the engine: one asset of a name per task.
+    if (this.uploads.some((u) => u.id === id && u.name === name))
+      return opOutcome(this.result(false, id, { code: 'exists', message: `asset exists: ${name}` }));
+    this.uploads.push({ id, name, type: file.type, size: file.size });
+    t.etag += 1;
+    this.rev += 1;
+    const outcome = opOutcome(this.result(true, id));
     if (this.loseNextAnswer) {
       this.loseNextAnswer = false;
       throw new AnswerLost();

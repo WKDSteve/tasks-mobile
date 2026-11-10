@@ -53,4 +53,9 @@ export interface DataSource {
   /** One operation, one request: its own `client_op_id`, so the hub can tell a repeat. */
   write(clientOpId: string, op: Op): Promise<OpOutcome>;
   donePreview(id: string): Promise<DonePreview>;
+  /**
+   * A file becomes an asset of the task `id` (the hub's upload route), under `name`. Sent once like a write: when
+   * the answer is lost it is `AnswerLost`, and the user decides.
+   */
+  upload(id: string, file: Blob, name: string): Promise<OpOutcome>;
 }

@@ -6,7 +6,7 @@
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { extname, join, normalize, resolve, sep } from 'node:path';
-import { POLICY } from './csp.mjs';
+import { PERMISSIONS, POLICY } from './csp.mjs';
 
 /** @type {Record<string, string>} */
 const TYPES = {
@@ -34,6 +34,7 @@ const server = createServer(async (request, response) => {
     'Referrer-Policy': 'no-referrer',
     'Cache-Control': 'no-store',
     'Cross-Origin-Resource-Policy': 'same-origin',
+    'Permissions-Policy': PERMISSIONS,
   };
   if (request.method !== 'GET' || (file !== root && !file.startsWith(root + sep))) {
     response.writeHead(404, headers).end();

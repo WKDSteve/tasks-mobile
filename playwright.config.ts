@@ -19,6 +19,9 @@ export default defineConfig({
     trace: 'retain-on-failure',
     screenshot: 'off',
     video: 'off',
+    // A microphone that plays a tone, granted without a prompt: the voice note is recorded for real.
+    permissions: ['microphone'],
+    launchOptions: { args: ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'] },
   },
   webServer: {
     command: `node tools/serve.mjs dist-fake ${port}`,

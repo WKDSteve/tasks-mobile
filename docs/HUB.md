@@ -11,11 +11,16 @@ Done in tasks-desktop (its `mobile.lock`, `tools/build-mobile.py`, `crates/tasks
 - Embed `dist/` of a pinned commit of tasks-mobile in the binary (like the desktop page, SRV-20), served under `/m/`.
   The page uses relative addresses, so it works below `/m/` as built.
 - The policy of `/m/` is the shell policy plus `manifest-src 'self'; worker-src 'self'` and the Trusted Types policy
-  `tasks-mobile-worker` next to `svelte-trusted-html`. The exact string the page is tested under is `tools/csp.mjs`.
+  `tasks-mobile-worker` next to `svelte-trusted-html`. For the voice note (appkit v0.45.0,
+  `GuardRules::with_installable_microphone`) also `media-src 'self' blob:` and `microphone=(self)` in the
+  `Permissions-Policy`; every other page of the hub keeps `microphone=()`. The exact strings the page is tested under
+  are in `tools/csp.mjs`. A hub without the microphone still takes photos; recording then says why it cannot.
 - `manifest.webmanifest` as `application/manifest+json`, `sw.js` as `text/javascript`. The worker's scope is `/m/`;
   it does not need `Service-Worker-Allowed`.
 - The routes the page uses: `GET /api/tasks/hello`, `/api/tasks/areas`, `/api/tasks/snapshot`, `/api/tasks/next`,
-  `/api/tasks/task`, `/api/tasks/done_preview`; `POST /api/tasks/ops` (one operation per request), `POST /auth/exchange`.
+  `/api/tasks/task`, `/api/tasks/done_preview`; `POST /api/tasks/ops` (one operation per request),
+  `POST /api/tasks/upload?id=` (a file of a captured task, after the `new`; the body is the file, `X-Upload-Name` its
+  name), `POST /auth/exchange`.
 
 ## 2. Filter by class for the phone (MOB-02)
 
