@@ -22,7 +22,7 @@
   });
 </script>
 
-<p><button onclick={() => (app.screen = 'list')}>← {t('task.back')}</button></p>
+<p><button onclick={() => (app.screen = app.returnTo)}>← {t('task.back')}</button></p>
 
 {#if task}
   <article>

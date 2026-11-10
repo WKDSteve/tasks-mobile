@@ -29,16 +29,26 @@ const snapshot = () =>
   json({
     kind: 'tasks.snapshot',
     rev: 'r1',
-    areas: [{ name: 'garden' }, { name: 'secret' }],
+    areas: [
+      { name: 'garden', by_status: { open: 2, doing: 1 } },
+      { name: 'secret', by_status: { open: 7 } },
+    ],
     tasks: [
       { id: 'garden/a', area: 'garden', title: 'A', etag: 'e1' },
       { id: 'secret/b', area: 'secret', title: 'B' },
     ],
   });
+const next = () =>
+  json({
+    kind: 'tasks.next',
+    task: { id: 'secret/b', title: 'B', status: 'open', prio: 1 },
+    alternatives: [{ id: 'garden/a', title: 'A', status: 'open', prio: 2 }],
+  });
+const vaultRoutes = { '/api/tasks/areas': areas, '/api/tasks/snapshot': snapshot, '/api/tasks/next': next };
 
 describe('HubSource', () => {
   it('sends the session as a bearer token, without cookie, cache or referrer', async () => {
-    const h = hub({ '/api/tasks/areas': areas, '/api/tasks/snapshot': snapshot });
+    const h = hub(vaultRoutes);
     await new HubSource(h.fetch, TOKEN).vault();
     for (const call of h.calls) {
       expect(new Headers(call.init.headers).get('Authorization')).toBe(`Bearer ${TOKEN}`);
@@ -49,11 +59,17 @@ describe('HubSource', () => {
   });
 
   it('reads the classes before the snapshot and shows only what may be shown (MOB-02)', async () => {
-    const h = hub({ '/api/tasks/areas': areas, '/api/tasks/snapshot': snapshot });
+    const h = hub(vaultRoutes);
     const view = await new HubSource(h.fetch, TOKEN).vault();
-    expect(h.calls.map((c) => c.url)).toEqual(['/api/tasks/areas', '/api/tasks/snapshot']);
+    expect(h.calls.map((c) => c.url)).toEqual(['/api/tasks/areas', '/api/tasks/snapshot', '/api/tasks/next?n=10']);
     expect(view.tasks.map((t) => t.id)).toEqual(['garden/a']);
     expect(view.hiddenAreas).toBe(1);
+  });
+
+  it('counts and the next pick only of shown areas: a hidden area adds nothing (MOB-02, MOB-05)', async () => {
+    const view = await new HubSource(hub(vaultRoutes).fetch, TOKEN).vault();
+    expect(view.counts).toEqual({ open: 2, doing: 1 });
+    expect(view.next.map((p) => p.id)).toEqual(['garden/a']);
   });
 
   it('calls a refused session unpaired', async () => {

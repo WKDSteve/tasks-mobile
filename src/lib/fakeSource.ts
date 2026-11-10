@@ -204,11 +204,35 @@ export class FakeSource implements DataSource, FakeControls {
       kind: 'tasks.snapshot',
       rev: `r${this.rev}`,
       digest: 'fake',
-      areas: Object.keys(CLASSES).map((name) => ({ name, open: open.filter((t) => t.area === name).length })),
+      areas: Object.keys(CLASSES).map((name) => {
+        const mine = open.filter((t) => t.area === name);
+        const byStatus: Record<string, number> = {};
+        for (const t of mine) byStatus[t.status] = (byStatus[t.status] ?? 0) + 1;
+        return { name, open: mine.length, by_status: byStatus };
+      }),
       // One entry claims an area its id does not start with: it is dropped by the check, not shown.
       tasks: [...open.map((t) => this.entry(t)), { id: 'vault-secret/claims-garden', area: 'garden', title: 'SECRET-MARKER' }],
     };
-    return vaultView(doc, this.classes());
+    return vaultView(doc, this.classes(), this.nextDoc(open));
+  }
+
+  /**
+   * Like the engine's `next`: the pick and its alternatives over the whole vault, by prio here (the fake's own
+   * order). The task of the area that stays on the PC comes first, so the page has to drop it.
+   */
+  private nextDoc(open: FakeTask[]): unknown {
+    const ranked = open
+      .filter((t) => t.status === 'open' || t.status === 'doing')
+      .sort((a, b) => (a.prio ?? 9) - (b.prio ?? 9) || a.id.localeCompare(b.id));
+    const secret = ranked.filter((t) => t.area === 'vault-secret');
+    const rest = ranked.filter((t) => t.area !== 'vault-secret');
+    const [first, ...alternatives] = [...secret, ...rest].map((t) => ({
+      id: t.id,
+      title: t.title,
+      status: t.status,
+      ...(t.prio !== undefined ? { prio: t.prio } : {}),
+    }));
+    return { ...HEAD, kind: 'tasks.next', digest: 'fake', ...(first ? { task: first } : {}), alternatives };
   }
 
   async task(id: string): Promise<TaskDetail> {

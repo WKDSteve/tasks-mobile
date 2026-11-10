@@ -4,9 +4,9 @@
 // (appkit-ui/device) opens a new session on every start.
 
 import { indexedDbStore, type CacheStore } from 'appkit-ui/cache';
-import { isAreaName, isTaskId } from './parse';
+import { isAreaName, isTaskId, MAX_NEXT, statusCounts } from './parse';
 import type { QueueStore } from './queue';
-import type { AreaInfo, Status, TaskBrief, VaultView } from './types';
+import type { AreaInfo, NextPick, Status, TaskBrief, VaultView } from './types';
 import { STATUSES } from './types';
 
 const DB = 'tasks-mobile';
@@ -52,7 +52,26 @@ export function restoreView(raw: unknown): KeptView | null {
   const shown = new Set(areas.map((a) => a.name));
   const tasks = view['tasks'].map(brief).filter((t): t is TaskBrief => t !== null && shown.has(t.area));
   const hidden = Number.isInteger(view['hiddenAreas']) ? Math.max(0, view['hiddenAreas'] as number) : 0;
-  return { at: r['at'], view: { rev: view['rev'].slice(0, 200), tasks, areas, hiddenAreas: hidden } };
+  // A copy kept before the counts and the picks were kept has neither: then the view shows none, never a guess.
+  const counts = statusCounts(view['counts']);
+  const next = (Array.isArray(view['next']) ? view['next'] : []).flatMap((p) => {
+    const pick = restorePick(p);
+    return pick && shown.has(pick.area) ? [pick] : [];
+  }).slice(0, MAX_NEXT);
+  return { at: r['at'], view: { rev: view['rev'].slice(0, 200), tasks, areas, hiddenAreas: hidden, counts, next } };
+}
+
+function restorePick(value: unknown): NextPick | null {
+  if (typeof value !== 'object' || value === null) return null;
+  const v = value as Record<string, unknown>;
+  if (!isTaskId(v['id']) || typeof v['title'] !== 'string' || v['area'] !== v['id'].slice(0, v['id'].indexOf('/'))) return null;
+  return {
+    id: v['id'],
+    area: v['area'],
+    title: v['title'].slice(0, 500),
+    status: (STATUSES as readonly unknown[]).includes(v['status']) ? (v['status'] as Status) : null,
+    prio: Number.isInteger(v['prio']) ? (v['prio'] as number) : null,
+  };
 }
 
 /** How long a kept list is shown without the hub (MOB-08): after that it is deleted, not shown as if it still held. */

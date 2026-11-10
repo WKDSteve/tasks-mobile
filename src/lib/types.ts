@@ -33,6 +33,18 @@ export interface TaskBrief {
   etag: string | null;
 }
 
+/** How many open tasks the engine counted per status. */
+export type StatusCounts = Partial<Record<Status, number>>;
+
+/** A task the engine names as the next one to take (`tasks.next`), in the engine's order. */
+export interface NextPick {
+  id: string;
+  area: string;
+  title: string;
+  status: Status | null;
+  prio: number | null;
+}
+
 /** What the page shows of the vault. */
 export interface VaultView {
   rev: string;
@@ -42,6 +54,10 @@ export interface VaultView {
   areas: AreaInfo[];
   /** How many areas the hub named that this page does not show (no class, or a class that stays on the PC). */
   hiddenAreas: number;
+  /** The engine's counts per status, added up over the shown areas only (`areas[].by_status` of the snapshot). */
+  counts: StatusCounts;
+  /** What the engine would take next, only the picks of shown areas. */
+  next: NextPick[];
 }
 
 export interface QuestionOption {

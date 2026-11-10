@@ -4,6 +4,7 @@
   import type { Shared } from './lib/share';
   import StatusBar from './views/StatusBar.svelte';
   import Pair from './views/Pair.svelte';
+  import Today from './views/Today.svelte';
   import TaskList from './views/TaskList.svelte';
   import Capture from './views/Capture.svelte';
   import Queue from './views/Queue.svelte';
@@ -52,6 +53,8 @@
     <Queue {app} {t} />
   {:else if app.screen === 'task'}
     <TaskView {app} {t} />
+  {:else if app.screen === 'today'}
+    <Today {app} {t} />
   {:else}
     <TaskList {app} {t} />
   {/if}
@@ -59,6 +62,7 @@
 
 {#if app.screen !== 'pair'}
   <nav class="bottom" aria-label={t('app.title')}>
+    <button aria-current={app.screen === 'today' ? 'page' : undefined} onclick={() => (app.screen = 'today')}>{t('nav.today')}</button>
     <button aria-current={app.screen === 'list' ? 'page' : undefined} onclick={() => (app.screen = 'list')}>{t('nav.list')}</button>
     <button aria-current={app.screen === 'capture' ? 'page' : undefined} onclick={() => (app.screen = 'capture')}>{t('nav.capture')}</button>
     <button aria-current={app.screen === 'queue' ? 'page' : undefined} onclick={() => (app.screen = 'queue')}>
@@ -102,7 +106,7 @@
     right: 0;
     bottom: 0;
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(4, 1fr);
     gap: 6px;
     padding: 8px 8px calc(8px + env(safe-area-inset-bottom));
     background: var(--surface);

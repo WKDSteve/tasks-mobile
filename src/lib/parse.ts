@@ -7,10 +7,12 @@ import type {
   DataClass,
   DonePreview,
   HubHello,
+  NextPick,
   OpErrorCode,
   OpOutcome,
   Question,
   Status,
+  StatusCounts,
   TaskBrief,
   TaskDetail,
   VaultView,
@@ -118,12 +120,17 @@ export function areaClasses(doc: unknown): Map<string, DataClass> {
  * area the snapshot names but the class list does not is hidden (fail closed), and counted, so the page can say
  * that it shows a part (MUI-06).
  */
-export function vaultView(doc: unknown, classes: Map<string, DataClass>): VaultView {
+export function vaultView(doc: unknown, classes: Map<string, DataClass>, nextDoc?: unknown): VaultView {
   if (!isObj(doc) || doc['kind'] !== 'tasks.snapshot') throw new ShapeError('snapshot');
   const rev = str(doc['rev'], 200);
   if (rev === null || !Array.isArray(doc['tasks']) || !Array.isArray(doc['areas'])) throw new ShapeError('snapshot');
   const named = new Set<string>();
-  for (const entry of doc['areas']) if (isObj(entry) && isAreaName(entry['name'])) named.add(entry['name']);
+  const byArea = new Map<string, unknown>();
+  for (const entry of doc['areas']) {
+    if (!isObj(entry) || !isAreaName(entry['name'])) continue;
+    named.add(entry['name']);
+    byArea.set(entry['name'], entry['by_status']);
+  }
   for (const name of classes.keys()) named.add(name);
   const areas: AreaInfo[] = [];
   let hiddenAreas = 0;
@@ -138,7 +145,53 @@ export function vaultView(doc: unknown, classes: Map<string, DataClass>): VaultV
     const brief = taskBrief(entry);
     if (brief && shown.has(brief.area)) tasks.push(brief);
   }
-  return { rev, tasks, areas, hiddenAreas };
+  // The engine counts per area; the page only adds up the areas it shows, so a hidden area adds nothing (MOB-02).
+  const counts: StatusCounts = {};
+  for (const name of shown) {
+    const add = statusCounts(byArea.get(name));
+    for (const s of STATUSES) if (add[s] !== undefined) counts[s] = (counts[s] ?? 0) + add[s];
+  }
+  const next = nextDoc === undefined ? [] : nextPicks(nextDoc, shown);
+  return { rev, tasks, areas, hiddenAreas, counts, next };
+}
+
+/** `by_status` of one area: a count is a whole number of at least 0 under a status word; anything else is left out. */
+export function statusCounts(value: unknown): StatusCounts {
+  const counts: StatusCounts = {};
+  if (!isObj(value)) return counts;
+  for (const s of STATUSES) {
+    const n = int(value[s]);
+    if (n !== null && n >= 0) counts[s] = n;
+  }
+  return counts;
+}
+
+/** The most picks of `tasks.next` the page keeps. */
+export const MAX_NEXT = 5;
+
+function nextPick(value: unknown): NextPick | null {
+  if (!isObj(value)) return null;
+  const id = value['id'];
+  const title = str(value['title']);
+  if (!isTaskId(id) || title === null) return null;
+  return { id, area: id.slice(0, id.indexOf('/')), title, status: status(value['status']), prio: int(value['prio']) };
+}
+
+/**
+ * `/api/tasks/next`: the engine's pick and its alternatives, in its order, only those of shown areas (the area is
+ * the start of the id, the way the engine makes ids), each task once.
+ */
+export function nextPicks(doc: unknown, shown: ReadonlySet<string>): NextPick[] {
+  if (!isObj(doc) || doc['kind'] !== 'tasks.next') throw new ShapeError('next');
+  const raw = [doc['task'], ...(Array.isArray(doc['alternatives']) ? doc['alternatives'] : [])];
+  const picks: NextPick[] = [];
+  for (const entry of raw) {
+    const pick = nextPick(entry);
+    if (!pick || !shown.has(pick.area) || picks.some((p) => p.id === pick.id)) continue;
+    picks.push(pick);
+    if (picks.length === MAX_NEXT) break;
+  }
+  return picks;
 }
 
 function question(value: unknown): Question | null {

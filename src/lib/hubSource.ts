@@ -10,6 +10,8 @@ import type { DataClass, DonePreview, HubHello, Op, OpErrorCode, OpOutcome, Task
 export const READ_TIMEOUT_MS = 15_000;
 /** How long a write may take; after that its fate is unknown (`AnswerLost`). */
 export const WRITE_TIMEOUT_MS = 30_000;
+/** How many alternatives the page asks `next` for (the hub allows 0 to 10). */
+export const NEXT_ASKED = 10;
 
 function idParam(id: string): string {
   return encodeURIComponent(id).replace(/%2F/gi, '/');
@@ -81,7 +83,10 @@ export class HubSource implements DataSource {
   async vault(): Promise<VaultView> {
     // The classes first: the snapshot is cut by them, and without them nothing is shown (fail closed).
     this.classes = areaClasses(await this.read('/api/tasks/areas'));
-    return vaultView(await this.read('/api/tasks/snapshot'), this.classes);
+    const snapshot = await this.read('/api/tasks/snapshot');
+    // More picks than are shown: those of hidden areas are dropped on the page (`nextPicks`).
+    const next = await this.read(`/api/tasks/next?n=${NEXT_ASKED}`);
+    return vaultView(snapshot, this.classes, next);
   }
 
   async task(id: string): Promise<TaskDetail> {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { areaClasses, dataClassOf, donePreview, isTaskId, opOutcome, ShapeError, taskBrief, taskDetail, vaultView } from './parse';
+import { areaClasses, dataClassOf, donePreview, isTaskId, MAX_NEXT, nextPicks, opOutcome, ShapeError, statusCounts, taskBrief, taskDetail, vaultView } from './parse';
 
 const classes = new Map([
   ['garden', 'public' as const],
@@ -93,5 +93,56 @@ describe('shape checks at the edge (MSEC-13)', () => {
   it('reads a done preview and keeps only ids among the freed', () => {
     const p = donePreview({ kind: 'tasks.donepreview', confirm: 'c1', freed: ['garden/a', '../x', 3], next_round: { due: '2026-02-01' } });
     expect(p).toEqual({ already: false, confirm: 'c1', closesPlan: null, closesProject: null, freed: ['garden/a'], nextDue: '2026-02-01' });
+  });
+});
+
+describe('the today view: counts and picks of the engine (MOB-05), only of shown areas (MOB-02)', () => {
+  const doc = {
+    kind: 'tasks.snapshot',
+    rev: 'r1',
+    areas: [
+      { name: 'garden', by_status: { open: 2, decision: 1 } },
+      { name: 'kitchen', by_status: { open: 1, doing: 1 } },
+      { name: 'secret', by_status: { open: 50 } },
+      { name: 'loose', by_status: { open: 9 } },
+    ],
+    tasks: [],
+  };
+
+  it('adds up the counts of the shown areas only', () => {
+    expect(vaultView(doc, classes).counts).toEqual({ open: 3, decision: 1, doing: 1 });
+  });
+
+  it('leaves out a count that is no whole number of at least 0, or under a word that is no status', () => {
+    expect(statusCounts({ open: -1, doing: 2.5, parked: '3', blocked: 0, later: 4 })).toEqual({ blocked: 0 });
+    expect(statusCounts('x')).toEqual({});
+  });
+
+  it('keeps the engine order of next, drops picks of hidden areas, bad ids and repeats', () => {
+    const next = {
+      kind: 'tasks.next',
+      task: { id: 'secret/x', title: 'SECRET' },
+      alternatives: [
+        { id: 'kitchen/b', title: 'B', status: 'doing', prio: 2 },
+        { id: '../evil', title: 'E' },
+        { id: 'garden/a', title: 'A', status: 'open' },
+        { id: 'kitchen/b', title: 'B again' },
+        { id: 'loose/l', title: 'L' },
+      ],
+    };
+    expect(nextPicks(next, new Set(['garden', 'kitchen']))).toEqual([
+      { id: 'kitchen/b', area: 'kitchen', title: 'B', status: 'doing', prio: 2 },
+      { id: 'garden/a', area: 'garden', title: 'A', status: 'open', prio: null },
+    ]);
+  });
+
+  it('keeps at most MAX_NEXT picks', () => {
+    const alternatives = Array.from({ length: 9 }, (_, i) => ({ id: `garden/t${i}`, title: `T${i}` }));
+    expect(nextPicks({ kind: 'tasks.next', alternatives }, new Set(['garden']))).toHaveLength(MAX_NEXT);
+  });
+
+  it('refuses a next document of another kind (MOB-09)', () => {
+    expect(() => nextPicks({ kind: 'tasks.error' }, new Set())).toThrow(ShapeError);
+    expect(() => vaultView(doc, classes, null)).toThrow(ShapeError);
   });
 });

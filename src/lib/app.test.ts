@@ -94,6 +94,20 @@ describe('App on the synthetic vault', () => {
     expect(JSON.stringify(d.views.value)).not.toContain('SECRET-MARKER');
   });
 
+  it('starts on Today with the engine picks and counts of the shown areas, and keeps them for offline', async () => {
+    const fake = new FakeSource();
+    const d = deps(fake);
+    const app = new App(d);
+    await app.start(null);
+    expect(app.screen).toBe('today');
+    // The fake engine names the task of the area that stays on the PC first: it is not there.
+    expect(app.view?.next[0]?.id).toBe('garden/water-the-plants');
+    expect(app.view?.next.some((p) => p.area === 'vault-secret')).toBe(false);
+    expect(app.view?.counts).toEqual({ open: 2, decision: 1, doing: 1, parked: 1 });
+    expect(d.views.value?.view.counts).toEqual(app.view?.counts);
+    expect(d.views.value?.view.next).toEqual(app.view?.next);
+  });
+
   it('creates a task through the queue, and the list shows it only after the engine said yes (MOB-07)', async () => {
     const fake = new FakeSource();
     const app = new App(deps(fake));
@@ -179,12 +193,24 @@ describe('App on the synthetic vault', () => {
     const app = new App(deps(fake));
     await app.start(null);
     const task = app.view!.tasks.find((t) => t.id === 'kitchen/fix-the-tap')!;
+    app.screen = 'list';
     await app.openTask(task);
     await app.askFinish(task);
     await app.finish(task);
     expect(app.notice).toEqual({ key: 'task.done_ok', params: { title: task.title }, tone: 'info' });
     expect(app.screen).toBe('list');
     expect(app.opened).toBeNull();
+  });
+
+  it('goes back to Today after finishing a task opened there', async () => {
+    const fake = new FakeSource();
+    const app = new App(deps(fake));
+    await app.start(null);
+    const task = app.view!.tasks.find((t) => t.id === 'kitchen/fix-the-tap')!;
+    await app.openTask(task);
+    await app.askFinish(task);
+    await app.finish(task);
+    expect(app.screen).toBe('today');
   });
 
   it('never sends a write again by itself when its answer was lost', async () => {
@@ -299,7 +325,7 @@ describe('the kept list (MOB-08)', () => {
     const fake = new FakeSource();
     fake.offline = true;
     const d = deps(fake);
-    d.views.value = { at: '2025-12-25T00:00:00Z', view: { rev: 'r', tasks: [], areas: [{ name: 'garden', dataClass: 'public' }], hiddenAreas: 0 } };
+    d.views.value = { at: '2025-12-25T00:00:00Z', view: { rev: 'r', tasks: [], areas: [{ name: 'garden', dataClass: 'public' }], hiddenAreas: 0, counts: {}, next: [] } };
     const app = new App(d);
     await app.start(null);
     expect(app.connection).toBe('offline');
@@ -312,7 +338,7 @@ describe('the kept list (MOB-08)', () => {
       const fake = new FakeSource();
       fake.offline = true;
       const d = deps(fake);
-      d.views.value = { at, view: { rev: 'r', tasks: [], areas: [], hiddenAreas: 0 } };
+      d.views.value = { at, view: { rev: 'r', tasks: [], areas: [], hiddenAreas: 0, counts: {}, next: [] } };
       const app = new App(d);
       await app.start(null);
       expect(app.view, at).toBeNull();
@@ -339,12 +365,12 @@ describe('pairing', () => {
     expect(first.screen).toBe('pair');
     expect(await first.pair(GOOD_CODE, '  Fairphone  ')).toBe(true);
     expect(device.names).toEqual(['Fairphone']);
-    expect(first.screen).toBe('list');
+    expect(first.screen).toBe('today');
     expect(first.connection).toBe('live');
     // The app is closed and opened again: no pairing screen, a session from the device key.
     const again = new App(deps(fake, { fake: false, device }));
     await again.start(null);
-    expect(again.screen).toBe('list');
+    expect(again.screen).toBe('today');
     expect(again.connection).toBe('live');
     expect(device.logins).toBe(2);
   });
@@ -369,10 +395,10 @@ describe('pairing', () => {
     const device = fakeDevice(true);
     device.offline = true;
     const d = deps(new FakeSource(), { fake: false, device });
-    d.views.value = { at: '2025-12-31T00:00:00Z', view: { rev: 'r', tasks: [], areas: [{ name: 'garden', dataClass: 'public' }], hiddenAreas: 0 } };
+    d.views.value = { at: '2025-12-31T00:00:00Z', view: { rev: 'r', tasks: [], areas: [{ name: 'garden', dataClass: 'public' }], hiddenAreas: 0, counts: {}, next: [] } };
     const app = new App(d);
     await app.start(null);
-    expect(app.screen).toBe('list');
+    expect(app.screen).toBe('today');
     expect(app.connection).toBe('offline');
     expect(app.view?.areas).toHaveLength(1);
     device.offline = false;
@@ -389,7 +415,7 @@ describe('pairing', () => {
     expect(app.connection).toBe('live');
     dead.add(String(device.logins).padStart(64, '0'));
     await app.refresh();
-    expect(app.screen).toBe('list');
+    expect(app.screen).toBe('today');
     expect(app.connection).toBe('live');
     expect(device.logins).toBe(2);
   });

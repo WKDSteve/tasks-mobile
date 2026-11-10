@@ -14,13 +14,14 @@ Done in tasks-desktop (its `mobile.lock`, `tools/build-mobile.py`, `crates/tasks
   `tasks-mobile-worker` next to `svelte-trusted-html`. The exact string the page is tested under is `tools/csp.mjs`.
 - `manifest.webmanifest` as `application/manifest+json`, `sw.js` as `text/javascript`. The worker's scope is `/m/`;
   it does not need `Service-Worker-Allowed`.
-- The routes the page uses: `GET /api/tasks/hello`, `/api/tasks/areas`, `/api/tasks/snapshot`, `/api/tasks/task`,
-  `/api/tasks/done_preview`; `POST /api/tasks/ops` (one operation per request), `POST /auth/exchange`.
+- The routes the page uses: `GET /api/tasks/hello`, `/api/tasks/areas`, `/api/tasks/snapshot`, `/api/tasks/next`,
+  `/api/tasks/task`, `/api/tasks/done_preview`; `POST /api/tasks/ops` (one operation per request), `POST /auth/exchange`.
 
 ## 2. Filter by class for the phone (MOB-02)
 
 The hub sends a phone session only areas of `public` and `internal`, in the snapshot, the task, and every list. Today
-the page drops the rest itself, after it crossed the tunnel.
+the page drops the rest itself, after it crossed the tunnel: the tasks and areas, the picks of `next` (vault-wide,
+the area is the start of the id) and the counts (it adds up `areas[].by_status` of the shown areas only).
 
 ## 3. Devices (MOB-03, MOB-04)
 

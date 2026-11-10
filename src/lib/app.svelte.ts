@@ -8,11 +8,12 @@ import { allows, DEFAULT_RIGHTS, type Right } from './rights';
 import { HubRefused, Unpaired, Unreachable, type DataSource } from './source';
 import type { KeptView } from './storage';
 import { isFresh } from './storage';
+import { localDay } from './today';
 import type { CacheStore } from 'appkit-ui/cache';
 import type { DonePreview, Op, Status, TaskBrief, TaskDetail, VaultView } from './types';
 import type { TextKey } from './i18n';
 
-export type Screen = 'pair' | 'list' | 'capture' | 'queue' | 'task';
+export type Screen = 'pair' | 'today' | 'list' | 'capture' | 'queue' | 'task';
 export type Connection = 'checking' | 'live' | 'offline';
 
 export interface AppDeps {
@@ -77,7 +78,8 @@ export function pairingCodeOf(text: string): string | null {
 }
 
 export class App {
-  screen = $state<Screen>('list');
+  /** The page starts on "Today" (what is next, open questions, what is due, the counts). */
+  screen = $state<Screen>('today');
   connection = $state<Connection>('checking');
   view = $state<VaultView | null>(null);
   viewAt = $state<string | null>(null);
@@ -204,7 +206,7 @@ export class App {
       const token = await this.deps.device.pair(clean, name.trim() === '' ? DEFAULT_DEVICE_NAME : name.trim());
       this.connect(token);
       this.notice = null;
-      this.screen = 'list';
+      this.screen = 'today';
       await this.refresh();
       return true;
     } catch (error) {
@@ -344,7 +346,11 @@ export class App {
     }
   }
 
+  /** The screen a task was opened from ("Today" or the list): "back" and a finish go there. */
+  returnTo = $state<'today' | 'list'>('list');
+
   async openTask(brief: TaskBrief): Promise<void> {
+    if (this.screen === 'today' || this.screen === 'list') this.returnTo = this.screen;
     this.opened = brief;
     this.detail = null;
     this.preview = null;
@@ -468,7 +474,7 @@ export class App {
         // Taken by the engine: a finished task is no task to read any more ("no such task"), so back to the list.
         this.opened = null;
         this.detail = null;
-        this.screen = 'list';
+        this.screen = this.returnTo;
         this.notice = { key: 'task.done_ok', params: { title: task.title }, tone: 'info' };
       } else {
         await this.reopen();
@@ -505,7 +511,12 @@ export class App {
     this.detail = null;
     this.opened = null;
     this.connection = 'offline';
-    this.screen = this.deps.fake ? 'list' : 'pair';
+    this.screen = this.deps.fake ? 'today' : 'pair';
+  }
+
+  /** The phone's day, against which a `due:` or `remind:` day has come or not. */
+  get day(): string {
+    return localDay(this.deps.now());
   }
 
   get paired(): boolean {

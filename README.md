@@ -17,6 +17,9 @@ real phone yet. What the hub still has to do (filter by class for the phone, dev
 
 What is there:
 
+- **Today**, where the app starts: what the engine would take next, the tasks that wait for an answer, the tasks whose
+  due or reminder day has come, and the engine's counts per status over the areas shown here (it says when areas are
+  missing). Offline it shows the kept copy with its time.
 - **List** of the open tasks of the areas that may be shown on a phone, with a filter by area and words.
 - **Capture**: title, area, one sentence of context. Also as a **share target** on Android: share a link or a text
   from another app to tasks, and the form is filled (it never creates a task by itself).

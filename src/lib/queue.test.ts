@@ -23,7 +23,7 @@ function source(answers: ((op: Op) => OpOutcome | Error)[]): DataSource & { call
     kind: 'fake',
     calls,
     hello: async () => ({ version: '', engineReady: true, engineProblem: null }),
-    vault: async () => ({ rev: 'r', tasks: [], areas: [], hiddenAreas: 0 }),
+    vault: async () => ({ rev: 'r', tasks: [], areas: [], hiddenAreas: 0, counts: {}, next: [] }),
     task: async () => {
       throw new Error('unused');
     },

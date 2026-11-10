@@ -16,10 +16,14 @@ export const test = base.extend<{ page: Page }>({
 
 export { expect };
 
-/** The page, started and connected to the synthetic vault. */
-export async function open(page: Page, path = '/'): Promise<void> {
+/**
+ * The page, started and connected to the synthetic vault, on the list (`screen: 'list'`, the default) or where it
+ * starts by itself ("Today", `screen: 'start'`).
+ */
+export async function open(page: Page, path = '/', screen: 'list' | 'start' = 'list'): Promise<void> {
   await page.goto(path);
   await expect(page.getByTestId('connection')).toHaveAttribute('data-state', 'live');
+  if (screen === 'list') await page.getByRole('button', { name: 'List', exact: true }).click();
 }
 
 /** Control the synthetic hub of the page (only in the fake build). */

@@ -188,6 +188,7 @@ test('the main views pass axe', async ({ page }) => {
   await open(page);
   for (const step of [
     async () => {},
+    async () => page.getByRole('button', { name: 'Today', exact: true }).click(),
     async () => page.getByRole('button', { name: 'New', exact: true }).click(),
     async () => page.getByRole('button', { name: /Waiting/ }).click(),
     async () => {
@@ -248,4 +249,37 @@ test('installable: manifest with a share target, a service worker that keeps no 
   });
   expect(cached.length).toBeGreaterThan(0);
   expect(cached.filter((p) => /\/(api|auth)\//.test(p))).toEqual([]);
+});
+
+test('starts on Today: the engine picks, open questions, what is due and the counts of the shown areas', async ({ page }) => {
+  await open(page, '/', 'start');
+  await expect(page.getByRole('button', { name: 'Today', exact: true })).toHaveAttribute('aria-current', 'page');
+  // The engine's first pick is in the area that stays on the PC: the page drops it.
+  await expect(page.getByTestId('today-next').getByRole('button').first()).toHaveAttribute('data-id', 'garden/water-the-plants');
+  await expect(page.getByTestId('today-questions').locator('[data-id="garden/choose-a-fence"]')).toBeVisible();
+  await expect(page.getByTestId('today-due').locator('[data-id="garden/water-the-plants"]')).toContainText('due 2026-01-10');
+  await expect(page.getByTestId('today-counts').locator('[data-status="open"] dd')).toHaveText('2');
+  await expect(page.getByTestId('today-counts').locator('[data-status="doing"] dd')).toHaveText('1');
+  await expect(page.getByTestId('today-counts-part')).toContainText('2 areas stay on the PC');
+  const html = await page.content();
+  expect(html).not.toContain('SECRET-MARKER');
+  expect(html).not.toContain('UNCLASSIFIED-MARKER');
+});
+
+test('a pick of Today opens the task, and back leads to Today', async ({ page }) => {
+  await open(page, '/', 'start');
+  await page.getByTestId('today-questions').locator('[data-id="garden/choose-a-fence"]').click();
+  await expect(page.getByTestId('task-body')).toContainText('Two offers came in.');
+  await page.getByRole('button', { name: /Back/ }).click();
+  await expect(page.getByTestId('today-next')).toBeVisible();
+});
+
+test('Today offline shows the kept copy and says how old it is (MOB-08)', async ({ page }) => {
+  await open(page, '/', 'start');
+  await fakeHub(page, { offline: true });
+  await page.getByRole('button', { name: 'Reload' }).click();
+  await expect(page.getByTestId('connection')).toHaveAttribute('data-state', 'offline');
+  await expect(page.getByTestId('today-as-of')).toContainText('As of');
+  await expect(page.getByTestId('today-next').getByRole('button').first()).toHaveAttribute('data-id', 'garden/water-the-plants');
+  await expect(page.getByTestId('today-counts').locator('[data-status="open"] dd')).toHaveText('2');
 });
