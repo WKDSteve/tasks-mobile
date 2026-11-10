@@ -616,6 +616,36 @@ describe('capture with files', () => {
     expect(app.view?.tasks.some((t) => t.id === 'garden/refused-file')).toBe(true);
   });
 
+  it('captured offline: once the task is made but its file is refused, the notice says so, not "created" (MOB-09)', async () => {
+    const fake = new FakeSource();
+    const app = new App(deps(fake, { fileStore: memoryFileStore() }));
+    await app.start(null);
+    fake.offline = true;
+    await app.refresh();
+    await app.capture({ area: 'garden', title: 'Later file', context: '' }, [{ blob: photo(), kind: 'photo' }]);
+    expect(app.notice).toMatchObject({ key: 'capture.queued' });
+    fake.offline = false;
+    fake.refuseNextUpload = true;
+    await app.refresh();
+    expect(app.notice).toMatchObject({ key: 'capture.files_wait', tone: 'error' });
+    // Sent again and taken: now it is created.
+    await app.retry(app.pending[0]!.clientOpId);
+    expect(app.pending).toEqual([]);
+  });
+
+  it('captured offline with a file that is taken: the notice ends on "created"', async () => {
+    const fake = new FakeSource();
+    const app = new App(deps(fake, { fileStore: memoryFileStore() }));
+    await app.start(null);
+    fake.offline = true;
+    await app.refresh();
+    await app.capture({ area: 'garden', title: 'Fine file', context: '' }, [{ blob: photo(), kind: 'photo' }]);
+    fake.offline = false;
+    await app.refresh();
+    expect(app.notice).toMatchObject({ key: 'capture.created' });
+    expect(fake.uploads.map((u) => u.id)).toEqual(['garden/fine-file']);
+  });
+
   it('creates nothing when a file cannot be kept on the phone (storage full)', async () => {
     const fake = new FakeSource();
     const files = memoryFileStore();

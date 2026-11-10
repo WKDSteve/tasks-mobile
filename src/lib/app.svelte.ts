@@ -69,6 +69,8 @@ export interface Notice {
   tone: 'info' | 'error';
   /** The queued write the notice speaks of ("waiting for the PC"): it follows that write until it is gone. */
   op?: string;
+  /** The keys of the files of that write: once the task is made, the notice follows them until they are sent. */
+  files?: string[];
 }
 
 const PAIR_CODE = /(?:^|[#&?])pair=([0-9a-f]{32,128})(?:&|$)/;
@@ -126,10 +128,24 @@ export class App {
     const notice = this.notice;
     if (notice?.key !== 'capture.queued' || notice.op === undefined) return;
     const left = this.queue.items.find((i) => i.clientOpId === notice.op);
-    if (!left) this.notice = { key: 'capture.created', params: notice.params, tone: 'info' };
-    else if (left.state !== 'waiting' && left.state !== 'sending') {
-      this.notice = { key: 'capture.not_taken', params: notice.params, tone: 'error' };
+    if (left) {
+      if (left.state !== 'waiting' && left.state !== 'sending') {
+        this.notice = { key: 'capture.not_taken', params: notice.params, tone: 'error' };
+      }
+      return;
     }
+    // The task is made; its files went in its place. "Created" only once none of them is left; one the hub did not
+    // take is said, never hidden behind "created" (MOB-09).
+    const files = this.uploadsOf(notice.files ?? []);
+    if (files.length === 0) this.notice = { key: 'capture.created', params: notice.params, tone: 'info' };
+    else if (files.some((i) => i.state !== 'waiting' && i.state !== 'sending')) {
+      this.notice = { key: 'capture.files_wait', params: notice.params, tone: 'error' };
+    }
+  }
+
+  /** The uploads in the queue of the files with these keys. */
+  private uploadsOf(keys: readonly string[]): Pending[] {
+    return this.queue.items.filter((i) => i.op.op === 'upload' && keys.includes(i.op.file.key));
   }
 
   get kind(): 'hub' | 'fake' {
@@ -343,8 +359,9 @@ export class App {
       this.view = view;
       this.viewAt = this.deps.now().toISOString();
       this.connection = 'live';
-      // An error said before is over once the hub answered in full; a word of information stays.
-      if (this.notice?.tone === 'error') this.notice = null;
+      // An error of the hub said before (`error.*`) is over once the hub answered in full. What a write came to (not
+      // taken, a file that waits) stays until the person moves on: it is about the write, not about the hub.
+      if (this.notice?.tone === 'error' && this.notice.key.startsWith('error.')) this.notice = null;
       await this.deps.viewStore.save({ view, at: this.viewAt });
     } catch (error) {
       if (error instanceof Unpaired) {
@@ -443,12 +460,13 @@ export class App {
       // Say what became of it: taken by the engine (gone from the queue), still waiting, or not taken.
       const left = this.queue.items.find((i) => i.clientOpId === item.clientOpId);
       const params = { title: checked.op.title };
+      const keys = (item.files ?? []).map((f) => f.key);
       // Made, but a file of it still waits (no answer yet, or refused): it is under "Waiting".
-      const filesLeft = !left && this.queue.items.some((i) => i.op.op === 'upload' && (item.files ?? []).some((f) => i.op.op === 'upload' && i.op.file.key === f.key));
+      const filesLeft = !left && this.uploadsOf(keys).length > 0;
       if (filesLeft) this.notice = { key: 'capture.files_wait', params, tone: 'error' };
       else if (!left) this.notice = { key: 'capture.created', params, tone: 'info' };
       else if (left.state === 'waiting' || left.state === 'sending') {
-        this.notice = { key: 'capture.queued', params, tone: 'info', op: item.clientOpId };
+        this.notice = { key: 'capture.queued', params, tone: 'info', op: item.clientOpId, files: keys };
       }
       else this.notice = { key: 'capture.not_taken', params, tone: 'error' };
       return true;
