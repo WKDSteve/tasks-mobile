@@ -163,8 +163,9 @@ export class WriteQueue {
     readonly fileStore: FileStore = memoryFileStore(),
   ) {
     this.kit = new KitQueue<QueueOp>({
-      // Entries kept before the queue was the kit's are taken over on the way in.
-      store: { load: async () => migrateAll(await store.load()), save: (items) => store.save(items), clear: () => store.clear() },
+      // What is read back is taken over (an entry of the old queue), checked and settled on the way in, before the kit
+      // sets its items and the page is told: the page never sees an entry that `settle` would drop.
+      store: { load: async () => restore(await store.load(), null), save: (items) => store.save(items), clear: () => store.clear() },
       validOp,
       needsIfMatch,
       ifMatchOf,
@@ -184,7 +185,6 @@ export class WriteQueue {
 
   async load(shownAreas: ReadonlySet<string> | null): Promise<void> {
     await this.kit.load(shownAreas);
-    this.kit.items = settle(this.kit.items);
     // A file no write names any more (dropped, sent, or of an area that is not shown now) does not stay (MSEC-12).
     const named = new Set(this.kit.items.flatMap(keysOf));
     for (const key of await this.fileStore.keys()) if (!named.has(key)) await this.fileStore.delete(key);
@@ -276,8 +276,4 @@ export class WriteQueue {
     await this.kit.clear();
     await this.fileStore.clear();
   }
-}
-
-function migrateAll(raw: unknown): unknown {
-  return Array.isArray(raw) ? raw.map(migrate) : raw;
 }

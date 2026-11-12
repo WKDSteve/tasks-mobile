@@ -418,10 +418,11 @@ export class App {
     let item: Pending;
     try {
       item = await this.queue.add(op, area, label, refs);
-    } catch {
-      // A change without the version seen is never queued (MOB-08): the task is to be read again first.
+    } catch (error) {
       for (const ref of refs) await this.queue.fileStore.delete(ref.key);
-      this.notice = { key: 'task.no_version', tone: 'error' };
+      // A change without the version seen is never queued (MOB-08): the task is to be read again first.
+      if (error instanceof Error && error.message === 'if_match required') this.notice = { key: 'task.no_version', tone: 'error' };
+      else this.notice = { key: 'queue.full', tone: 'error' };
       return null;
     }
     if (this.source && this.connection !== 'offline') await this.refresh();

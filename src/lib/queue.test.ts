@@ -344,6 +344,18 @@ describe('files of a new task', () => {
     expect(files.files.size).toBe(0);
   });
 
+  it('the page is told only of what was settled: an entry the check drops never shows under Waiting', async () => {
+    const store = memory();
+    const upload = { clientOpId: 'id-00000009', op: { op: 'upload', id: 'secret/x', file: photo }, area: 'garden', label: 'A', queuedAt: '2026-01-01T00:00:00Z', state: 'waiting' };
+    const good = { clientOpId: 'id-00000010', op: NEW, area: 'garden', label: 'A', queuedAt: '2026-01-01T00:00:00Z', state: 'waiting' };
+    store.saved = [upload, good] as unknown as Pending[];
+    const seen: string[][] = [];
+    const q: WriteQueue = new WriteQueue(store, ids, clock, () => seen.push(q.items.map((i) => i.clientOpId)), memoryFileStore());
+    await q.load(null);
+    expect(seen).toEqual([['id-00000010']]);
+    expect(q.items.map((i) => i.clientOpId)).toEqual(['id-00000010']);
+  });
+
   it('an upload read back must go to a task of its own area', () => {
     const item = {
       clientOpId: 'id-00000001',
