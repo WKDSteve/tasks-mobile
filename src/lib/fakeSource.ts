@@ -362,7 +362,7 @@ export class FakeSource implements DataSource, FakeControls {
     }
     const t = this.tasks.find((x) => x.id === id);
     if (!t) return opOutcome(this.result(false, null, { code: 'not_found', message: 'no such task' }));
-    // Like the hub, which attaches an upload with `exact` (tasks.nvim b32f653): a name the task has already is `exists`,
+    // Like the hub for an upload with `exact=1`, as this page sends it (tasks.nvim b32f653): a name the task has already is `exists`,
     // nothing is attached a second time.
     if (this.uploads.some((u) => u.id === id && u.name === name))
       return opOutcome(this.result(false, id, { code: 'exists', message: 'attach: the task has an asset of this name already' }));

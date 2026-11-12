@@ -47,6 +47,12 @@ const next = () =>
 const vaultRoutes = { '/api/tasks/areas': areas, '/api/tasks/snapshot': snapshot, '/api/tasks/next': next };
 
 describe('HubSource', () => {
+  it('asks for the exact name of a file: one sent again is `exists`, never a second copy', async () => {
+    const h = hub({ '/api/tasks/upload': () => json({ kind: 'tasks.result', results: [{ ok: true, id: 'garden/a' }] }) });
+    await new HubSource(h.fetch, TOKEN).upload('garden/a', new Blob(['x']), 'photo.jpg');
+    expect(h.calls[0]!.url).toBe('/api/tasks/upload?id=garden/a&exact=1');
+  });
+
   it('sends the session as a bearer token, without cookie, cache or referrer', async () => {
     const h = hub(vaultRoutes);
     await new HubSource(h.fetch, TOKEN).vault();

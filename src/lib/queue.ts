@@ -231,8 +231,8 @@ export class WriteQueue {
     } catch (error) {
       return outcomeOf(error);
     }
-    // A file the task has under its name already arrived with an earlier try whose answer was lost: the hub sends uploads
-    // with `exact` (tasks.nvim b32f653), so the engine says `exists` instead of attaching it a second time.
+    // A file the task has under its name already arrived with an earlier try whose answer was lost: the page uploads with
+    // `exact=1` (`hubSource.ts`, tasks.nvim b32f653), so the engine says `exists` instead of attaching it a second time.
     if (!outcome.ok && op.op === 'upload' && outcome.code === 'exists') {
       await this.fileStore.delete(op.file.key);
       return { kind: 'done' };

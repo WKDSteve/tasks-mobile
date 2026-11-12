@@ -47,7 +47,7 @@
           </details>
         {/if}
         {#if item.state === 'unknown' && item.op.op === 'upload'}
-          <!-- The hub attaches with `exact`: a file sent again that had arrived is answered `exists`, never attached twice. -->
+          <!-- The page uploads with `exact=1`: a file sent again that had arrived is answered `exists`, never attached twice. -->
           <p class="muted" data-testid="unknown-upload-help">{t('queue.unknown_upload_help')}</p>
         {:else if item.state === 'unknown'}
           <p class="muted">{t('queue.unknown_help')}</p>

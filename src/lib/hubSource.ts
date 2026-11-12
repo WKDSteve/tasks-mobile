@@ -124,7 +124,9 @@ export class HubSource implements DataSource {
   async upload(id: string, file: Blob, name: string): Promise<OpOutcome> {
     let response: Response;
     try {
-      response = await this.client.request(`/api/tasks/upload?id=${idParam(id)}`, {
+      // `exact=1`: a name the task has already is `exists`, not a second file with a counter (a file sent again after its
+      // answer was lost arrives once); the desktop page keeps the counter.
+      response = await this.client.request(`/api/tasks/upload?id=${idParam(id)}&exact=1`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/octet-stream', 'X-Upload-Name': encodeURIComponent(name) },
         body: file,
