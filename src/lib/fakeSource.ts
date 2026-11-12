@@ -362,12 +362,11 @@ export class FakeSource implements DataSource, FakeControls {
     }
     const t = this.tasks.find((x) => x.id === id);
     if (!t) return opOutcome(this.result(false, null, { code: 'not_found', message: 'no such task' }));
-    // Like the engine (`attach_source.lua`, `from: upload`): a name the task has already gets a counter
-    // (`photo.jpg`, `photo-2.jpg`), so a file sent twice is attached twice.
-    const taken = (n: string) => this.uploads.some((u) => u.id === id && u.name === n);
-    let stored = name;
-    for (let n = 2; taken(stored); n += 1) stored = name.replace(/^(.*?)(\.[A-Za-z0-9]+)?$/, `$1-${n}$2`);
-    this.uploads.push({ id, name: stored, type: file.type, size: file.size });
+    // Like the hub, which attaches an upload with `exact` (tasks.nvim b32f653): a name the task has already is `exists`,
+    // nothing is attached a second time.
+    if (this.uploads.some((u) => u.id === id && u.name === name))
+      return opOutcome(this.result(false, id, { code: 'exists', message: 'attach: the task has an asset of this name already' }));
+    this.uploads.push({ id, name, type: file.type, size: file.size });
     t.etag += 1;
     this.rev += 1;
     const outcome = opOutcome(this.result(true, id));
