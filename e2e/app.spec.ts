@@ -287,3 +287,24 @@ test('Today offline shows the kept copy and says how old it is (MOB-08)', async 
   await expect(page.getByTestId('today-next').getByRole('button').first()).toHaveAttribute('data-id', 'garden/water-the-plants');
   await expect(page.getByTestId('today-counts').locator('[data-status="open"] dd')).toHaveText('2');
 });
+
+test('a tapped notice opens its task, and the id leaves the address (PWA-06)', async ({ page }) => {
+  await open(page, '/?task=garden%2Fwater-the-plants', 'start');
+  await expect(page.getByRole('heading', { name: 'Water the plants' })).toBeVisible();
+  expect(new URL(page.url()).search).toBe('');
+  // An id that is not a task id opens nothing.
+  await open(page, '/?task=..%2Fsecret', 'start');
+  expect(new URL(page.url()).search).toBe('');
+  await expect(page.getByRole('button', { name: 'Today', exact: true })).toHaveAttribute('aria-current', 'page');
+});
+
+test('notices are offered under Waiting with what the browser says about them', async ({ page }) => {
+  await open(page, '/', 'start');
+  await page.getByRole('button', { name: /^Waiting/ }).click();
+  const push = page.getByTestId('push');
+  await expect(push.getByRole('heading', { name: 'Notifications' })).toBeVisible();
+  // Headless Chrome answers `denied` without asking; a phone answers `default` until the button is pressed.
+  const permission = await page.evaluate(() => Notification.permission);
+  await expect(page.getByTestId('push-state')).toContainText(permission === 'denied' ? 'Blocked in the browser' : 'Off.');
+  await expect(push.getByRole('button', { name: 'Turn notifications on' })).toHaveCount(permission === 'denied' ? 0 : 1);
+});

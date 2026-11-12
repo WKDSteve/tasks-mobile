@@ -2,6 +2,7 @@
 // tunnel today, over Tailscale Serve later, `docs/USAGE.md`) or, in the browser tests, a synthetic vault in memory.
 // No implementation computes a rule of the tasks: the engine behind the hub does (MOB-05).
 
+import type { PushSubscriptionBody } from './push';
 import type { DonePreview, HubHello, Op, OpOutcome, TaskDetail, VaultView } from './types';
 
 /** The hub could not be reached at all (no tunnel, no network): the page is offline, the write waits. */
@@ -58,4 +59,10 @@ export interface DataSource {
    * the answer is lost it is `AnswerLost`, and the user decides.
    */
   upload(id: string, file: Blob, name: string): Promise<OpOutcome>;
+  /** The hub's public key for Web Push (`GET /api/push/key`); `HubRefused` when the hub sends no notices. */
+  pushKey(): Promise<string>;
+  /** Subscribe this device for kinds of notices, in place of what it had. */
+  pushSubscribe(body: PushSubscriptionBody): Promise<void>;
+  /** Unsubscribe this device from every notice. */
+  pushUnsubscribe(): Promise<void>;
 }

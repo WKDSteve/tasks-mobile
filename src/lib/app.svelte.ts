@@ -4,6 +4,7 @@
 import { assetName, checkAttachment, type AttachmentProblem, type AttachmentRef, type FileStore, type NewAttachment } from './attach';
 import { checkDraft, emptyForm, type CaptureForm, type Draft, type DraftProblem } from './capture';
 import { ShapeError } from './parse';
+import { PUSH_KINDS, type PushAccess, type PushState } from './push';
 import { filesOf, WriteQueue, type Pending, type QueueStore } from './queue';
 import { allows, DEFAULT_RIGHTS, type Right } from './rights';
 import { HubRefused, Unpaired, Unreachable, type DataSource } from './source';
@@ -35,6 +36,8 @@ export interface AppDeps {
   timer?: RetryTimer;
   /** Whether the page is shown; a page in the background asks nothing. */
   visible?(): boolean;
+  /** Notices from the hub (Web Push); without it the page offers none. */
+  push?: PushAccess;
 }
 
 export interface RetryTimer {
@@ -47,6 +50,9 @@ export interface RetryTimer {
  * would hear of (no `online`, no `visibilitychange`), so it asks again by itself, less often the longer it lasts.
  */
 export const RETRY_MS = [5_000, 15_000, 60_000];
+
+/** How long the start waits for the browser to say whether notices are on. */
+export const PUSH_READ_MS = 2_000;
 
 /** What a start finds at the hub for this device. */
 export type DeviceLogin = { kind: 'session'; token: string } | { kind: 'unpaired' } | { kind: 'refused' };
@@ -99,6 +105,8 @@ export class App {
   /** Why a file of the capture was not taken. */
   fileProblem = $state<AttachmentProblem | 'store' | null>(null);
   pending = $state<WriteQueue['items']>([]);
+  /** Notices of the hub on this phone: not offered, off, on, or refused in the browser's settings. */
+  pushState = $state<PushState>('unsupported');
   /** The capture form as it was left, until it is created or discarded (see `CaptureForm`). */
   form = $state<CaptureForm>(emptyForm());
   rights: ReadonlySet<Right> = DEFAULT_RIGHTS;
@@ -176,6 +184,7 @@ export class App {
       this.viewAt = kept.at;
     }
     await this.queue.load(kept ? new Set(kept.view.areas.map((a) => a.name)) : null);
+    await this.readPush();
     if (this.deps.fake) {
       this.connect(null);
     } else if (pairingCode !== null) {
@@ -581,8 +590,9 @@ export class App {
     await this.queue.drop(clientOpId);
   }
 
-  /** Unpair this phone: the session, the copy and the queue go (MSEC-12). */
+  /** Unpair this phone: the session, the copy, the queue and the notices go (MSEC-12). */
   async forget(): Promise<void> {
+    if (this.pushState === 'on') await this.disablePush(false);
     await this.deps.device.forget();
     if (this.notice?.op !== undefined) this.notice = null;
     this.token = null;
@@ -617,6 +627,99 @@ export class App {
     for (const file of this.form.files) if (typeof URL.revokeObjectURL === 'function') URL.revokeObjectURL(file.url);
     this.form = emptyForm();
     this.fileProblem = null;
+  }
+
+  /** What the browser says about notices of this page (no question asked). */
+  private async readPush(): Promise<void> {
+    const push = this.deps.push;
+    if (!push?.supported()) {
+      this.pushState = 'unsupported';
+      return;
+    }
+    if (push.permission() === 'denied') {
+      this.pushState = 'denied';
+      return;
+    }
+    try {
+      // The start does not wait long on the browser: unanswered, notices count as off.
+      const late = new Promise<boolean>((resolve) => setTimeout(() => resolve(false), PUSH_READ_MS));
+      this.pushState = (await Promise.race([push.subscribed(), late])) ? 'on' : 'off';
+    } catch {
+      this.pushState = 'off';
+    }
+  }
+
+  /**
+   * Turn notices on: the browser asks for the permission now (on the button, never at the start), then the hub keeps
+   * the subscription for reminders and decisions. Needs the hub: the key is the hub's.
+   */
+  async enablePush(): Promise<void> {
+    const push = this.deps.push;
+    if (!push?.supported()) return;
+    if (!this.source || this.connection !== 'live') {
+      this.notice = { key: 'push.offline', tone: 'info' };
+      return;
+    }
+    this.busy = true;
+    try {
+      const key = await this.source.pushKey();
+      const sub = await push.subscribe(key);
+      if (!sub) {
+        this.pushState = push.permission() === 'denied' ? 'denied' : 'off';
+        this.notice = { key: 'push.refused', tone: 'error' };
+        return;
+      }
+      try {
+        await this.source.pushSubscribe({ ...sub, kinds: [...PUSH_KINDS] });
+      } catch (error) {
+        // The hub did not keep it: no subscription of the browser is left behind that nobody sends to.
+        await push.unsubscribe().catch(() => {});
+        throw error;
+      }
+      this.pushState = 'on';
+      this.notice = { key: 'push.on', tone: 'info' };
+    } catch (error) {
+      if (error instanceof HubRefused && (error.status === 404 || error.status === 403)) {
+        this.notice = { key: 'push.hub_none', tone: 'error' };
+      } else {
+        this.failed(error);
+      }
+    } finally {
+      this.busy = false;
+    }
+  }
+
+  /**
+   * Turn notices off: the browser lets go of its subscription (a push service then tells the hub it is gone), and the
+   * hub forgets it at once when it can be reached.
+   */
+  async disablePush(say = true): Promise<void> {
+    const push = this.deps.push;
+    if (!push) return;
+    try {
+      await push.unsubscribe();
+    } catch {
+      // Nothing to let go of.
+    }
+    this.pushState = push.permission() === 'denied' ? 'denied' : 'off';
+    if (this.source && this.connection === 'live') {
+      try {
+        await this.source.pushUnsubscribe();
+      } catch {
+        // The browser's subscription is gone: the hub forgets it on the next notice (the push service says 410).
+      }
+    }
+    if (say) this.notice = { key: 'push.off', tone: 'info' };
+  }
+
+  /** A tapped notice opens its task; a task that is no longer in the list is said, not guessed. */
+  async openById(id: string): Promise<void> {
+    const brief = this.view?.tasks.find((t) => t.id === id);
+    if (!brief) {
+      this.notice = { key: 'push.task_gone', tone: 'info' };
+      return;
+    }
+    await this.openTask(brief);
   }
 
   /** The phone's day, against which a `due:` or `remind:` day has come or not. */

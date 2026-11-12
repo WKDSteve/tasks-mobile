@@ -8,6 +8,7 @@
 
 import { areaClasses, donePreview, hubHello, opOutcome, taskDetail, vaultView } from './parse';
 import { AnswerLost, HubRefused, Unreachable, type DataSource } from './source';
+import type { PushSubscriptionBody } from './push';
 import type { DataClass, DonePreview, HubHello, Op, OpOutcome, TaskDetail, VaultView } from './types';
 
 interface FakeTask {
@@ -158,6 +159,8 @@ export class FakeSource implements DataSource, FakeControls {
   readonly uploads: { id: string; name: string; type: string; size: number }[] = [];
   refuseNextUpload = false;
   loseNextUploadAnswer = false;
+  /** The subscription the fake hub keeps for this device (Web Push), or `null`. */
+  pushed: PushSubscriptionBody | null = null;
   private tasks = initialTasks();
   private rev = 1;
   private seen = new Map<string, OpOutcome>();
@@ -176,6 +179,22 @@ export class FakeSource implements DataSource, FakeControls {
 
   private reachable(): void {
     if (this.offline) throw new Unreachable();
+  }
+
+  async pushKey(): Promise<string> {
+    this.reachable();
+    // A P-256 point in the shape of the hub's key; the fake sends no notices.
+    return `B${'A'.repeat(86)}`;
+  }
+
+  async pushSubscribe(body: PushSubscriptionBody): Promise<void> {
+    this.reachable();
+    this.pushed = { ...body, kinds: [...body.kinds] };
+  }
+
+  async pushUnsubscribe(): Promise<void> {
+    this.reachable();
+    this.pushed = null;
   }
 
   private entry(t: FakeTask): Record<string, unknown> {

@@ -39,6 +39,9 @@ function source(answers: ((op: QueueOp) => OpOutcome | Error)[]): DataSource & {
       if (answer instanceof Error) throw answer;
       return answer;
     },
+    pushKey: async () => 'unused',
+    pushSubscribe: async () => {},
+    pushUnsubscribe: async () => {},
     upload: async (id, file, name) => {
       calls.push(`upload ${id} ${name} ${file.size}`);
       const next = answers.shift();

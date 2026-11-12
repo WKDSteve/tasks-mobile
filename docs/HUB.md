@@ -38,3 +38,11 @@ app.
 
 The guard allows the tailnet origin (`https://<host>.<tailnet>.ts.net`) for device sessions only, with `Host` checked
 exactly. Needs step 3.
+
+## 5. Web Push (reminders and decisions)
+
+The page subscribes a paired device with `appkit-hub::push` (`GET /api/push/key`, `POST /api/push/subscribe` with the
+kinds `remind` and `decision`, `POST /api/push/unsubscribe`). The hub turns it on with `GuardRules::with_push` and sends
+`Push::notify("remind", Some((id, class)), false)` when the `remind:` day of a task comes, and
+`Push::notify("decision", ...)` when a task starts to wait for the author's decision. Only the kind and the id go out
+(PWA-06); the id only when the class of its area is released for devices.

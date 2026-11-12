@@ -3,6 +3,7 @@
 
 import { HubClient } from 'appkit-ui/client';
 import { areaClasses, donePreview, hubHello, OP_ERROR_CODES, opOutcome, taskDetail, vaultView } from './parse';
+import { pushKey, type PushSubscriptionBody } from './push';
 import { AnswerLost, HubRefused, Unpaired, Unreachable, type DataSource } from './source';
 import type { DataClass, DonePreview, HubHello, Op, OpErrorCode, OpOutcome, TaskDetail, VaultView } from './types';
 
@@ -140,6 +141,34 @@ export class HubSource implements DataSource {
       if (verdict) return verdict;
     }
     return opOutcome(await this.body(response));
+  }
+
+  async pushKey(): Promise<string> {
+    return pushKey(await this.read('/api/push/key'));
+  }
+
+  /** A change of the subscription is said again on the next turn-on; a lost answer is a failure the page says. */
+  private async pushPost(path: string, body: unknown): Promise<void> {
+    let response: Response;
+    try {
+      response = await this.client.request(path, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(READ_TIMEOUT_MS),
+      });
+    } catch (error) {
+      throw new Unreachable(error);
+    }
+    await this.body(response);
+  }
+
+  pushSubscribe(body: PushSubscriptionBody): Promise<void> {
+    return this.pushPost('/api/push/subscribe', body);
+  }
+
+  pushUnsubscribe(): Promise<void> {
+    return this.pushPost('/api/push/unsubscribe', {});
   }
 
   async donePreview(id: string): Promise<DonePreview> {

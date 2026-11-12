@@ -4,7 +4,8 @@ import { FakeSource } from './fakeSource';
 import { memoryFileStore } from './attach';
 import { memoryStore } from './storage';
 import type { KeptView } from './storage';
-import { Unpaired, type DataSource } from './source';
+import { HubRefused, Unpaired, type DataSource } from './source';
+import type { PushAccess } from './push';
 
 const GOOD_CODE = 'b'.repeat(32);
 
@@ -59,6 +60,9 @@ function sourceFor(fake: FakeSource, dead: Set<string | null>): (token: string |
       write: (id, op) => gate(() => fake.write(id, op)),
       donePreview: (id) => gate(() => fake.donePreview(id)),
       upload: (id, file, name) => gate(() => fake.upload(id, file, name)),
+      pushKey: () => gate(() => fake.pushKey()),
+      pushSubscribe: (body) => gate(() => fake.pushSubscribe(body)),
+      pushUnsubscribe: () => gate(() => fake.pushUnsubscribe()),
     };
   };
 }
@@ -733,4 +737,119 @@ describe('capture with files', () => {
     expect(app.fileProblem).toBe('wrong_type');
     expect(fake.writes).toEqual([]);
   });
+});
+
+describe('notices of the hub', () => {
+  function browser(over: Partial<{ supported: boolean; permission: NotificationPermission; grant: boolean }> = {}) {
+    const state = { subscribed: false, permission: over.permission ?? ('default' as NotificationPermission), asked: 0 };
+    const push: PushAccess = {
+      supported: () => over.supported ?? true,
+      permission: () => state.permission,
+      subscribed: async () => state.subscribed,
+      subscribe: async () => {
+        state.asked += 1;
+        state.permission = over.grant === false ? 'denied' : 'granted';
+        if (over.grant === false) return null;
+        state.subscribed = true;
+        return { endpoint: 'https://push.example.org/x', p256dh: 'p', auth: 'a' };
+      },
+      unsubscribe: async () => {
+        state.subscribed = false;
+      },
+    };
+    return { push, state };
+  }
+
+  it('asks nothing at the start, and subscribes for reminders and decisions on the button', async () => {
+    const fake = new FakeSource();
+    const b = browser();
+    const app = new App(deps(fake, { push: b.push }));
+    await app.start(null);
+    expect(app.pushState).toBe('off');
+    expect(b.state.asked).toBe(0);
+    await app.enablePush();
+    expect(app.pushState).toBe('on');
+    expect(fake.pushed).toEqual({ endpoint: 'https://push.example.org/x', p256dh: 'p', auth: 'a', kinds: ['remind', 'decision'] });
+    await app.disablePush();
+    expect(app.pushState).toBe('off');
+    expect(fake.pushed).toBeNull();
+    expect(b.state.subscribed).toBe(false);
+  });
+
+  it('a refused permission turns nothing on, and the hub keeps nothing', async () => {
+    const fake = new FakeSource();
+    const app = new App(deps(fake, { push: browser({ grant: false }).push }));
+    await app.start(null);
+    await app.enablePush();
+    expect(app.pushState).toBe('denied');
+    expect(app.notice).toMatchObject({ key: 'push.refused' });
+    expect(fake.pushed).toBeNull();
+  });
+
+  it('a hub that sends no notices: said, and no subscription of the browser is left behind', async () => {
+    const fake = new FakeSource();
+    fake.pushSubscribe = async () => {
+      throw new HubRefused(404, 'no_devices', 'this hub keeps no devices');
+    };
+    const b = browser();
+    const app = new App(deps(fake, { push: b.push }));
+    await app.start(null);
+    await app.enablePush();
+    expect(app.notice).toMatchObject({ key: 'push.hub_none' });
+    expect(app.pushState).toBe('off');
+    expect(b.state.subscribed).toBe(false);
+  });
+
+  it('offers nothing where the browser cannot, and turning on needs the PC', async () => {
+    const none = new App(deps(new FakeSource(), { push: browser({ supported: false }).push }));
+    await none.start(null);
+    expect(none.pushState).toBe('unsupported');
+    const fake = new FakeSource();
+    const app = new App(deps(fake, { push: browser().push }));
+    await app.start(null);
+    fake.offline = true;
+    await app.refresh();
+    await app.enablePush();
+    expect(app.notice).toMatchObject({ key: 'push.offline' });
+    expect(app.pushState).toBe('off');
+  });
+
+  it('unpairing turns notices off (MSEC-12)', async () => {
+    const fake = new FakeSource();
+    const b = browser();
+    const app = new App(deps(fake, { push: b.push }));
+    await app.start(null);
+    await app.enablePush();
+    await app.forget();
+    expect(b.state.subscribed).toBe(false);
+    expect(fake.pushed).toBeNull();
+  });
+
+  it('a tapped notice opens its task; a task not in the list is said', async () => {
+    const app = new App(deps(new FakeSource()));
+    await app.start(null);
+    await app.openById('garden/water-the-plants');
+    expect(app.screen).toBe('task');
+    expect(app.opened?.id).toBe('garden/water-the-plants');
+    app.screen = 'today';
+    await app.openById('garden/gone-long-ago');
+    expect(app.screen).toBe('today');
+    expect(app.notice).toMatchObject({ key: 'push.task_gone' });
+  });
+});
+
+describe('notices do not hold up the start', () => {
+  it('a browser that never says whether it is subscribed: the start goes on, notices count as off', async () => {
+    const push: PushAccess = {
+      supported: () => true,
+      permission: () => 'default',
+      subscribed: () => new Promise<boolean>(() => {}),
+      subscribe: async () => null,
+      unsubscribe: async () => {},
+    };
+    const app = new App(deps(new FakeSource(), { push }));
+    await app.start(null);
+    expect(app.pushState).toBe('off');
+    expect(app.view).not.toBeNull();
+  }, 5_000);
 });

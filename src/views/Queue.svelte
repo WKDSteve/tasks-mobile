@@ -67,6 +67,17 @@
   </ul>
 {/if}
 
+<section class="push" data-testid="push">
+  <h2>{t('push.title')}</h2>
+  <p class="muted">{t('push.help')}</p>
+  <p data-testid="push-state">{t(`push.state.${app.pushState}` as TextKey)}</p>
+  {#if app.pushState === 'off'}
+    <button onclick={() => void app.enablePush()} disabled={app.busy}>{t('push.enable')}</button>
+  {:else if app.pushState === 'on'}
+    <button onclick={() => void app.disablePush()} disabled={app.busy}>{t('push.disable')}</button>
+  {/if}
+</section>
+
 <section class="forget">
   {#if forgetting}
     <div role="alertdialog" aria-labelledby="forget-text" data-testid="forget-confirm">
@@ -82,6 +93,11 @@
 </section>
 
 <style>
+  .push h2 {
+    font-size: 1rem;
+    margin: 0 0 4px;
+  }
+  .push,
   .forget {
     margin-top: 28px;
     padding-top: 14px;

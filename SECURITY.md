@@ -38,6 +38,10 @@ keys first (appkit, plan "Mobile Basis").
   origin. Both are read back as untrusted and checked field by field (MSEC-13). "Disconnect and delete the data"
   removes the device key, the list and the queue.
 - The service worker keeps the page itself (HTML, script, style, icons), never a route of the hub (PWA-02).
+- Notifications (Web Push from the hub): the message carries the kind (`remind`, `decision`) and at most the id of a
+  task of a released area, never its title or text (PWA-06); the push service of the browser is somebody else's server.
+  The worker shows only a fixed sentence per kind and drops anything else that arrives; a tap opens the page with
+  `?task=<id>`, checked like any id and taken out of the address. Unpairing unsubscribes.
 
 ## Text from the vault and from other apps
 
