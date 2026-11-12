@@ -302,6 +302,18 @@ describe('files of a new task', () => {
     expect(again.calls).toEqual([]);
   });
 
+  it('a file the engine says it has already (exists, sent again after a lost answer) counts as arrived', async () => {
+    const { q, files } = await queueWithFiles();
+    const src = source([
+      () => ({ ok: true, id: 'garden/a' }),
+      () => ({ ok: false, code: 'exists', message: 'attach: the task has an asset of this name already', retryable: false }),
+      () => ({ ok: true, id: 'garden/a' }),
+    ]);
+    expect(await q.flush(src)).toEqual({ sent: 3, stopped: null });
+    expect(q.items).toEqual([]);
+    expect(files.files.size).toBe(0);
+  });
+
   it('a file that is gone from the phone is refused, not sent empty', async () => {
     const { q, files } = await queueWithFiles();
     files.files.delete(photo.key);
