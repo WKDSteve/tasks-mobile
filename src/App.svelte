@@ -16,9 +16,9 @@
   const t = translator(lang);
   if (typeof document !== 'undefined') document.documentElement.lang = lang;
 
-  // A share opens the form with what was shared in it.
+  // A share opens the form with what was shared in it (once: the form keeps it from then on).
   // svelte-ignore state_referenced_locally
-  if (shared) app.screen = 'capture';
+  if (shared) app.takeShare(shared);
 
   const waiting = $derived(app.pending.length);
 </script>
@@ -48,7 +48,7 @@
   {#if app.screen === 'pair'}
     <Pair {app} {t} />
   {:else if app.screen === 'capture'}
-    <Capture {app} {t} {shared} />
+    <Capture {app} {t} />
   {:else if app.screen === 'queue'}
     <Queue {app} {t} />
   {:else if app.screen === 'task'}

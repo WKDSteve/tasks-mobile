@@ -131,3 +131,39 @@ test('names the limits of the files and takes none beyond them', async ({ page }
   await page.getByRole('button', { name: 'Remove attachment' }).first().click();
   await expect(page.getByTestId('attachments').locator('li')).toHaveCount(2);
 });
+
+test('a recording running when another view is opened is kept as a voice note, with what was typed', async ({ page }) => {
+  await open(page);
+  await newCapture(page, 'Do not lose me');
+  await page.getByLabel('One sentence of context (optional)').fill('typed before');
+  await page.getByTestId('voice-start').click();
+  await expect(page.getByTestId('voice-stop')).toBeVisible();
+  await page.waitForTimeout(1200);
+  await page.getByRole('button', { name: 'List', exact: true }).click();
+  await expect(page.getByTestId('notice')).toContainText('waits as a voice note in the form');
+  await page.getByRole('button', { name: 'New', exact: true }).click();
+  await expect(page.getByLabel('Title')).toHaveValue('Do not lose me');
+  await expect(page.getByLabel('One sentence of context (optional)')).toHaveValue('typed before');
+  await expect(page.getByTestId('attachments').locator('audio')).toHaveCount(1);
+  // Discarding empties the form; nothing was sent.
+  await page.getByTestId('capture-discard').click();
+  await expect(page.getByLabel('Title')).toHaveValue('');
+  await expect(page.getByTestId('attachments')).toHaveCount(0);
+  await expect(page.getByTestId('capture-discard')).toHaveCount(0);
+  expect(await uploads(page)).toEqual([]);
+});
+
+test('a chosen photo stays in the form while Today is looked at, and is sent with the task', async ({ page }) => {
+  await open(page);
+  await newCapture(page, 'Photo kept');
+  await addPhoto(page);
+  await page.getByRole('button', { name: 'Today', exact: true }).click();
+  await page.getByRole('button', { name: 'New', exact: true }).click();
+  await expect(page.getByTestId('attachments').locator('img')).toHaveCount(1);
+  await page.getByRole('button', { name: 'Create' }).click();
+  await expect(page.getByTestId('notice')).toContainText('Created');
+  expect(await uploads(page)).toHaveLength(1);
+  // After creating, the form is empty again, the area stays.
+  await expect(page.getByLabel('Title')).toHaveValue('');
+  await expect(page.getByLabel('Area')).toHaveValue('garden');
+});

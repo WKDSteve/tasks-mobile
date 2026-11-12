@@ -333,6 +333,45 @@ describe('App on the synthetic vault', () => {
   });
 });
 
+describe('the capture form lives in the app, not in the view', () => {
+  const note = { id: 1, blob: new Blob(['abc'], { type: 'audio/webm' }), kind: 'voice' as const, url: 'blob:x' };
+
+  it('keeps what was typed and chosen while another view is shown', async () => {
+    const app = new App(deps(new FakeSource()));
+    await app.start(null);
+    app.screen = 'capture';
+    app.form.title = 'Half typed';
+    app.form.files = [note];
+    app.screen = 'list';
+    app.screen = 'capture';
+    expect(app.form).toMatchObject({ title: 'Half typed', files: [{ id: 1, kind: 'voice' }] });
+  });
+
+  it('a share fills the form and takes nothing away that was typed', async () => {
+    const app = new App(deps(new FakeSource()));
+    await app.start(null);
+    app.takeShare({ title: 'An article', context: 'https://example.org/a' });
+    expect(app.screen).toBe('capture');
+    expect(app.form).toMatchObject({ title: 'An article', context: 'https://example.org/a', fromShare: true });
+    app.form.title = 'Mine';
+    app.form.context = 'my words';
+    app.takeShare({ title: 'Second', context: 'more' });
+    expect(app.form).toMatchObject({ title: 'Mine', context: 'my words\nSecond\nmore' });
+  });
+
+  it('discarding empties the form; unpairing does too (MSEC-12)', async () => {
+    const app = new App(deps(new FakeSource()));
+    await app.start(null);
+    app.form.title = 'Gone';
+    app.form.files = [note];
+    app.discardForm();
+    expect(app.form).toEqual({ area: '', title: '', context: '', fromShare: false, files: [] });
+    app.form.files = [note];
+    await app.forget();
+    expect(app.form.files).toEqual([]);
+  });
+});
+
 describe('the kept list (MOB-08)', () => {
   it('shows a kept list offline, with its time, while it is young enough', async () => {
     const fake = new FakeSource();

@@ -1,6 +1,7 @@
 // Capturing a task on the way: the form is checked here, the engine checks the task (MOB-05). What is refused is
 // said in a word the page shows next to the field, never dropped in silence (MOB-09).
 
+import type { AttachmentKind } from './attach';
 import type { Op } from './types';
 
 export const MAX_TITLE = 200;
@@ -13,6 +14,34 @@ export interface Draft {
   area: string;
   title: string;
   context: string;
+}
+
+/** A file chosen in the form, before the task is made. */
+export interface PickedFile {
+  id: number;
+  blob: Blob;
+  kind: AttachmentKind;
+  /** A `blob:` address of this page for the preview; given back when the file leaves the form. */
+  url: string;
+}
+
+/**
+ * The capture form as it was left. It lives in the state of the app, not in the form: looking at another view (Today,
+ * the list, Waiting) does not take a typed title, a chosen photo or a voice note away; only creating or discarding does.
+ */
+export interface CaptureForm extends Draft {
+  /** Filled from a share of another app (said above the form). */
+  fromShare: boolean;
+  files: PickedFile[];
+}
+
+export function emptyForm(): CaptureForm {
+  return { area: '', title: '', context: '', fromShare: false, files: [] };
+}
+
+/** Is there anything in the form that would be lost by discarding it? */
+export function formHolds(form: CaptureForm): boolean {
+  return form.title.trim() !== '' || form.context.trim() !== '' || form.files.length > 0;
 }
 
 export type DraftProblem = 'title_empty' | 'title_long' | 'title_lines' | 'hidden_chars' | 'context_long' | 'area_unknown';

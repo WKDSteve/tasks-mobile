@@ -2,35 +2,22 @@
   // Capturing a task, with a photo or a voice note if wanted. The files are shown before the task is made, wait on
   // the phone with it, and are sent once the engine made it (`lib/queue.ts`). The microphone is asked for only when
   // the button is pressed (AND-01), and a recording stops when the page goes to the background.
+  //
+  // What is typed and chosen lives in `app.form`, not here: another view (Today, the list, Waiting) takes nothing away.
+  // A recording still running when the form is left is ended there and kept in the form as a voice note.
   import { onDestroy } from 'svelte';
   import type { App } from '../lib/app.svelte';
   import { MAX_FILE_BYTES, MAX_FILES, MAX_VOICE_MS, sizeText, type AttachmentKind } from '../lib/attach';
+  import { formHolds } from '../lib/capture';
   import type { Translate, TextKey } from '../lib/i18n';
   import { clock, startRecording, type Recording } from '../lib/recorder';
-  import type { Shared } from '../lib/share';
 
-  let { app, t, shared }: { app: App; t: Translate; shared: Shared | null } = $props();
+  let { app, t }: { app: App; t: Translate } = $props();
   // The problems of an earlier try belong to that form: a form opened anew starts without them (once, on mounting).
   // svelte-ignore state_referenced_locally
   app.problems = [];
 
-  // svelte-ignore state_referenced_locally
-  let title = $state(shared?.title ?? '');
-  // svelte-ignore state_referenced_locally
-  let context = $state(shared?.context ?? '');
-  // svelte-ignore state_referenced_locally
-  let fromShare = $state(shared !== null);
-  let area = $state('');
-
-  interface Picked {
-    id: number;
-    blob: Blob;
-    kind: AttachmentKind;
-    /** A `blob:` address of this page for the preview; given back when the file leaves the form. */
-    url: string;
-  }
-  let files = $state<Picked[]>([]);
-  let nextId = 0;
+  const form = $derived(app.form);
   let photoInput: HTMLInputElement | undefined = $state();
   let recording = $state<Recording | null>(null);
   let startedAt = $state(0);
@@ -39,19 +26,22 @@
   let micProblem = $state<string | null>(null);
 
   $effect(() => {
-    // The first area that may be written to, until the user picks one.
-    if (area === '' && app.areas.length > 0) area = app.areas[0] ?? '';
+    // The first area that may be written to, until the user picks one (or when the picked one is gone).
+    if (!app.areas.includes(form.area) && app.areas.length > 0) form.area = app.areas[0] ?? '';
   });
 
   function add(blob: Blob, kind: AttachmentKind): void {
-    if (app.checkFile({ blob, kind }, files.length) !== null) return;
-    files = [...files, { id: (nextId += 1), blob, kind, url: URL.createObjectURL(blob) }];
+    // The form of the app, not of this component: a note that ends after the form was left still lands in it.
+    const target = app.form;
+    if (app.checkFile({ blob, kind }, target.files.length) !== null) return;
+    const id = target.files.reduce((max, f) => Math.max(max, f.id), 0) + 1;
+    target.files = [...target.files, { id, blob, kind, url: URL.createObjectURL(blob) }];
   }
 
   function remove(id: number): void {
-    const gone = files.find((f) => f.id === id);
+    const gone = form.files.find((f) => f.id === id);
     if (gone) URL.revokeObjectURL(gone.url);
-    files = files.filter((f) => f.id !== id);
+    form.files = form.files.filter((f) => f.id !== id);
     app.fileProblem = null;
   }
 
@@ -63,8 +53,8 @@
 
   async function startVoice(): Promise<void> {
     micProblem = null;
-    if (files.length >= MAX_FILES) {
-      app.checkFile({ blob: new Blob(['x'], { type: 'audio/webm' }), kind: 'voice' }, files.length);
+    if (form.files.length >= MAX_FILES) {
+      app.checkFile({ blob: new Blob(['x'], { type: 'audio/webm' }), kind: 'voice' }, form.files.length);
       return;
     }
     try {
@@ -103,44 +93,60 @@
     return () => document.removeEventListener('visibilitychange', away);
   });
 
+  // Left while recording: the note is ended and kept in the form (said, so it is not a surprise later).
   onDestroy(() => {
+    if (!recording) return;
+    app.notice = { key: 'capture.voice_kept', tone: 'info' };
     void stopVoice();
-    for (const f of files) URL.revokeObjectURL(f.url);
   });
+
+  function discard(): void {
+    const rec = recording;
+    recording = null;
+    if (ticker !== null) clearInterval(ticker);
+    ticker = null;
+    // A note being recorded is let go with the rest: the microphone is released, the note is not kept.
+    if (rec) void rec.stop();
+    micProblem = null;
+    app.problems = [];
+    app.discardForm();
+  }
 
   async function submit(event: SubmitEvent): Promise<void> {
     event.preventDefault();
     if (recording) await stopVoice();
-    const ok = await app.capture({ area, title, context }, files.map((f) => ({ blob: f.blob, kind: f.kind })));
+    const ok = await app.capture(
+      { area: form.area, title: form.title, context: form.context },
+      form.files.map((f) => ({ blob: f.blob, kind: f.kind })),
+    );
     if (ok) {
-      title = '';
-      context = '';
-      fromShare = false;
-      for (const f of files) URL.revokeObjectURL(f.url);
-      files = [];
+      const area = form.area;
+      app.discardForm();
+      // The next task most likely goes to the same area.
+      app.form.area = area;
     }
   }
 </script>
 
 <form onsubmit={submit} novalidate>
-  {#if fromShare}
+  {#if form.fromShare}
     <p class="muted" data-testid="from-share">{t('capture.shared')}</p>
   {/if}
   {#if app.areas.length === 0}
     <p class="bad">{t('capture.no_area')}</p>
   {/if}
   <label for="cap-title">{t('capture.title')}</label>
-  <input id="cap-title" type="text" maxlength="400" enterkeyhint="next" bind:value={title} aria-invalid={app.problems.some((p) => p.startsWith('title')) || undefined} />
+  <input id="cap-title" type="text" maxlength="400" enterkeyhint="next" bind:value={form.title} aria-invalid={app.problems.some((p) => p.startsWith('title')) || undefined} />
 
   <label for="cap-area">{t('capture.area')}</label>
-  <select id="cap-area" bind:value={area}>
+  <select id="cap-area" bind:value={form.area}>
     {#each app.areas as a (a)}
       <option value={a}>{a}</option>
     {/each}
   </select>
 
   <label for="cap-context">{t('capture.context')}</label>
-  <textarea id="cap-context" maxlength="4000" bind:value={context}></textarea>
+  <textarea id="cap-context" maxlength="4000" bind:value={form.context}></textarea>
 
   <div class="attach">
     <input
@@ -154,13 +160,13 @@
       onchange={picked}
       data-testid="photo-input"
     />
-    <button type="button" onclick={() => photoInput?.click()} disabled={files.length >= MAX_FILES || recording !== null}>{t('capture.photo')}</button>
+    <button type="button" onclick={() => photoInput?.click()} disabled={form.files.length >= MAX_FILES || recording !== null}>{t('capture.photo')}</button>
     {#if recording}
       <button type="button" class="recording" onclick={() => void stopVoice()} data-testid="voice-stop">
         ● {t('capture.voice_stop', { time: clock(elapsed) })}
       </button>
     {:else}
-      <button type="button" onclick={() => void startVoice()} disabled={files.length >= MAX_FILES} data-testid="voice-start">{t('capture.voice')}</button>
+      <button type="button" onclick={() => void startVoice()} disabled={form.files.length >= MAX_FILES} data-testid="voice-start">{t('capture.voice')}</button>
     {/if}
   </div>
   <p class="muted note">{t('capture.files_limit', { n: MAX_FILES, size: sizeText(MAX_FILE_BYTES) })}</p>
@@ -174,9 +180,9 @@
     </p>
   {/if}
 
-  {#if files.length > 0}
+  {#if form.files.length > 0}
     <ul class="files" data-testid="attachments">
-      {#each files as file (file.id)}
+      {#each form.files as file (file.id)}
         <li data-kind={file.kind}>
           {#if file.kind === 'photo'}
             <img src={file.url} alt={t('capture.file_photo', { size: sizeText(file.blob.size) })} />
@@ -198,10 +204,20 @@
     </ul>
   {/if}
 
-  <p><button class="primary" type="submit" disabled={app.busy || app.areas.length === 0}>{t('capture.save')}</button></p>
+  <p class="actions">
+    <button class="primary" type="submit" disabled={app.busy || app.areas.length === 0}>{t('capture.save')}</button>
+    {#if formHolds(form) || recording}
+      <button type="button" onclick={discard} data-testid="capture-discard">{t('capture.discard')}</button>
+    {/if}
+  </p>
 </form>
 
 <style>
+  .actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
   .attach {
     display: flex;
     gap: 8px;

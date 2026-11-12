@@ -2,7 +2,7 @@
 // clock, the ids) comes in through `AppDeps`, so the tests run it without a browser (MTST-03).
 
 import { assetName, checkAttachment, type AttachmentProblem, type AttachmentRef, type FileStore, type NewAttachment } from './attach';
-import { checkDraft, type Draft, type DraftProblem } from './capture';
+import { checkDraft, emptyForm, type CaptureForm, type Draft, type DraftProblem } from './capture';
 import { ShapeError } from './parse';
 import { filesOf, WriteQueue, type Pending, type QueueStore } from './queue';
 import { allows, DEFAULT_RIGHTS, type Right } from './rights';
@@ -13,6 +13,7 @@ import { localDay } from './today';
 import type { CacheStore } from 'appkit-ui/cache';
 import type { DonePreview, Op, Status, TaskBrief, TaskDetail, VaultView } from './types';
 import type { TextKey } from './i18n';
+import type { Shared } from './share';
 
 export type Screen = 'pair' | 'today' | 'list' | 'capture' | 'queue' | 'task';
 export type Connection = 'checking' | 'live' | 'offline';
@@ -98,6 +99,8 @@ export class App {
   /** Why a file of the capture was not taken. */
   fileProblem = $state<AttachmentProblem | 'store' | null>(null);
   pending = $state<WriteQueue['items']>([]);
+  /** The capture form as it was left, until it is created or discarded (see `CaptureForm`). */
+  form = $state<CaptureForm>(emptyForm());
   rights: ReadonlySet<Right> = DEFAULT_RIGHTS;
   /** Counts the writes of the task page the PC refused as a conflict: the page sets its choices back to the new state. */
   conflicts = $state(0);
@@ -586,12 +589,34 @@ export class App {
     this.source = this.deps.fake ? this.deps.source(null) : null;
     await this.deps.viewStore.clear();
     await this.queue.clear();
+    this.discardForm();
     this.view = null;
     this.viewAt = null;
     this.detail = null;
     this.opened = null;
     this.connection = 'offline';
     this.screen = this.deps.fake ? 'today' : 'pair';
+  }
+
+  /**
+   * A share of another app fills the form; what was typed there already is not taken away (the shared title goes to
+   * the context then).
+   */
+  takeShare(shared: Shared): void {
+    const form = this.form;
+    const lines = (...parts: string[]) => parts.map((p) => p.trim()).filter((p) => p !== '').join('\n');
+    if (form.title.trim() === '') form.title = shared.title;
+    else form.context = lines(form.context, shared.title);
+    form.context = lines(form.context, shared.context);
+    form.fromShare = true;
+    this.screen = 'capture';
+  }
+
+  /** Empty the form, the previews of its files given back. */
+  discardForm(): void {
+    for (const file of this.form.files) if (typeof URL.revokeObjectURL === 'function') URL.revokeObjectURL(file.url);
+    this.form = emptyForm();
+    this.fileProblem = null;
   }
 
   /** The phone's day, against which a `due:` or `remind:` day has come or not. */
