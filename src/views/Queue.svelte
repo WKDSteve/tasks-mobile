@@ -46,7 +46,10 @@
             <span class="untrusted">{markHidden(item.message)}</span>
           </details>
         {/if}
-        {#if item.state === 'unknown'}
+        {#if item.state === 'unknown' && item.op.op === 'upload'}
+          <!-- The engine gives a second file of the same name a counter: sent again, an arrived file is there twice. -->
+          <p class="muted" data-testid="unknown-upload-help">{t('queue.unknown_upload_help')}</p>
+        {:else if item.state === 'unknown'}
           <p class="muted">{t('queue.unknown_help')}</p>
         {:else if item.state === 'conflict'}
           <p class="muted">{t('queue.conflict_help')}</p>

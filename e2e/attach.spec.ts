@@ -167,3 +167,14 @@ test('a chosen photo stays in the form while Today is looked at, and is sent wit
   await expect(page.getByLabel('Title')).toHaveValue('');
   await expect(page.getByLabel('Area')).toHaveValue('garden');
 });
+
+test('a file whose answer was lost warns in Waiting that sending it again may attach it twice', async ({ page }) => {
+  await open(page);
+  await fakeHub(page, { loseNextUploadAnswer: true });
+  await newCapture(page, 'Lost file answer');
+  await addPhoto(page);
+  await page.getByRole('button', { name: 'Create' }).click();
+  await page.getByRole('button', { name: /^Waiting/ }).click();
+  await expect(page.getByTestId('unknown-upload-help')).toContainText('attaches the file a second time');
+  expect(await uploads(page)).toHaveLength(1);
+});

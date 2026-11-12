@@ -683,6 +683,20 @@ describe('capture with files', () => {
     expect(app.pending).toEqual([]);
   });
 
+  it('a file sent again after a lost answer is attached twice, as the engine does (photo, photo-2)', async () => {
+    const fake = new FakeSource();
+    const app = new App(deps(fake, { fileStore: memoryFileStore() }));
+    await app.start(null);
+    fake.loseNextUploadAnswer = true;
+    await app.capture({ area: 'garden', title: 'Twice', context: '' }, [{ blob: photo(), kind: 'photo' }]);
+    expect(app.pending.map((p) => [p.op.op, p.state])).toEqual([['upload', 'unknown']]);
+    await app.retry(app.pending[0]!.clientOpId);
+    expect(app.pending).toEqual([]);
+    const names = fake.uploads.map((u) => u.name);
+    expect(names).toHaveLength(2);
+    expect(names[1]).toBe(names[0]!.replace(/\.png$/, '-2.png'));
+  });
+
   it('captured offline with a file that is taken: the notice ends on "created"', async () => {
     const fake = new FakeSource();
     const app = new App(deps(fake, { fileStore: memoryFileStore() }));

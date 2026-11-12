@@ -39,6 +39,8 @@ export interface FakeControls {
   readonly uploads: { id: string; name: string; type: string; size: number }[];
   /** The next upload is refused by the hub (a vault that changed while the file was on its way). */
   refuseNextUpload: boolean;
+  /** The next upload is attached but its answer is lost. */
+  loseNextUploadAnswer: boolean;
 }
 
 const HEAD = {
@@ -155,6 +157,7 @@ export class FakeSource implements DataSource, FakeControls {
   readonly writes: { clientOpId: string; op: Op }[] = [];
   readonly uploads: { id: string; name: string; type: string; size: number }[] = [];
   refuseNextUpload = false;
+  loseNextUploadAnswer = false;
   private tasks = initialTasks();
   private rev = 1;
   private seen = new Map<string, OpOutcome>();
@@ -340,15 +343,18 @@ export class FakeSource implements DataSource, FakeControls {
     }
     const t = this.tasks.find((x) => x.id === id);
     if (!t) return opOutcome(this.result(false, null, { code: 'not_found', message: 'no such task' }));
-    // Like the engine: one asset of a name per task.
-    if (this.uploads.some((u) => u.id === id && u.name === name))
-      return opOutcome(this.result(false, id, { code: 'exists', message: `asset exists: ${name}` }));
-    this.uploads.push({ id, name, type: file.type, size: file.size });
+    // Like the engine (`attach_source.lua`, `from: upload`): a name the task has already gets a counter
+    // (`photo.jpg`, `photo-2.jpg`), so a file sent twice is attached twice.
+    const taken = (n: string) => this.uploads.some((u) => u.id === id && u.name === n);
+    let stored = name;
+    for (let n = 2; taken(stored); n += 1) stored = name.replace(/^(.*?)(\.[A-Za-z0-9]+)?$/, `$1-${n}$2`);
+    this.uploads.push({ id, name: stored, type: file.type, size: file.size });
     t.etag += 1;
     this.rev += 1;
     const outcome = opOutcome(this.result(true, id));
-    if (this.loseNextAnswer) {
+    if (this.loseNextAnswer || this.loseNextUploadAnswer) {
       this.loseNextAnswer = false;
+      this.loseNextUploadAnswer = false;
       throw new AnswerLost();
     }
     return outcome;
