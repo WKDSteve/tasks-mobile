@@ -13,8 +13,8 @@
     const label = markHidden(item.label);
     switch (item.op.op) {
       case 'new':
-        return item.files?.length
-          ? t('queue.op.new_files', { label, n: item.files.length })
+        return item.op.files?.length
+          ? t('queue.op.new_files', { label, n: item.op.files.length })
           : t('queue.op.new', { label });
       case 'upload':
         return t('queue.op.upload', { label, name: item.op.file.name });

@@ -4,7 +4,6 @@ import { FakeSource } from './fakeSource';
 import { memoryFileStore } from './attach';
 import { memoryStore } from './storage';
 import type { KeptView } from './storage';
-import type { Pending } from './queue';
 import { Unpaired, type DataSource } from './source';
 
 const GOOD_CODE = 'b'.repeat(32);
@@ -67,7 +66,7 @@ function sourceFor(fake: FakeSource, dead: Set<string | null>): (token: string |
 let n = 0;
 function deps(fake: FakeSource, over: Partial<AppDeps> = {}): AppDeps & { views: ReturnType<typeof memoryStore<KeptView>> } {
   const views = memoryStore<KeptView>();
-  const queue = memoryStore<Pending[]>();
+  const queue = memoryStore<unknown[]>();
   return {
     source: () => fake,
     device: fakeDevice(),
@@ -157,6 +156,18 @@ describe('App on the synthetic vault', () => {
     await app.setStatus(task, 'blocked');
     expect(fake.writes[0]?.op).toEqual({ op: 'set', id: task.id, patch: { status: 'blocked' }, if_match: 'e1' });
     expect(app.detail?.task.status).toBe('blocked');
+  });
+
+  it('sends no change of a task whose version it does not know, and says so (MOB-08)', async () => {
+    const fake = new FakeSource();
+    const app = new App(deps(fake));
+    await app.start(null);
+    const task = { ...app.view!.tasks.find((t) => t.id === 'kitchen/fix-the-tap')!, etag: null };
+    await app.openTask(task);
+    await app.setStatus(task, 'blocked');
+    expect(fake.writes).toEqual([]);
+    expect(app.queue.items).toEqual([]);
+    expect(app.notice).toMatchObject({ key: 'task.no_version', tone: 'error' });
   });
 
   it('answers a question', async () => {

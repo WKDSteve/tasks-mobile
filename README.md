@@ -29,7 +29,8 @@ What is there:
   what that sets off (a plan it closes, tasks it frees).
 - **Offline**: the last list stays readable; what you create or change offline waits in a queue and is sent when the
   hub is reached again. Nothing is shown as done before the engine said so; a change the file moved on from is a
-  conflict you see, never an overwrite.
+  conflict you see, never an overwrite. The queue is the one of appkit (`appkit-ui/queue`); only the files of a new
+  task, sent after the engine made it, are added here (`src/lib/queue.ts`).
 
 What is not there (on purpose): editing the body, plans, anything with AI, deleting.
 

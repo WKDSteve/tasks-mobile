@@ -4,7 +4,7 @@
 import { assetName, checkAttachment, type AttachmentProblem, type AttachmentRef, type FileStore, type NewAttachment } from './attach';
 import { checkDraft, type Draft, type DraftProblem } from './capture';
 import { ShapeError } from './parse';
-import { WriteQueue, type Pending, type QueueStore } from './queue';
+import { filesOf, WriteQueue, type Pending, type QueueStore } from './queue';
 import { allows, DEFAULT_RIGHTS, type Right } from './rights';
 import { HubRefused, Unpaired, Unreachable, type DataSource } from './source';
 import type { KeptView } from './storage';
@@ -403,7 +403,15 @@ export class App {
     }
     const refs = await this.keepFiles(files);
     if (refs === null) return null;
-    const item = await this.queue.add(op, area, label, refs);
+    let item: Pending;
+    try {
+      item = await this.queue.add(op, area, label, refs);
+    } catch {
+      // A change without the version seen is never queued (MOB-08): the task is to be read again first.
+      for (const ref of refs) await this.queue.fileStore.delete(ref.key);
+      this.notice = { key: 'task.no_version', tone: 'error' };
+      return null;
+    }
     if (this.source && this.connection !== 'offline') await this.refresh();
     return item;
   }
@@ -460,7 +468,7 @@ export class App {
       // Say what became of it: taken by the engine (gone from the queue), still waiting, or not taken.
       const left = this.queue.items.find((i) => i.clientOpId === item.clientOpId);
       const params = { title: checked.op.title };
-      const keys = (item.files ?? []).map((f) => f.key);
+      const keys = filesOf(item).map((f) => f.key);
       // Made, but a file of it still waits (no answer yet, or refused): it is under "Waiting".
       const filesLeft = !left && this.uploadsOf(keys).length > 0;
       if (filesLeft) this.notice = { key: 'capture.files_wait', params, tone: 'error' };

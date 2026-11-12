@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { memoryFileStore, type AttachmentRef } from './attach';
-import { restore, WriteQueue, type Pending, type QueueOp, type QueueStore } from './queue';
+import { filesOf, restore, WriteQueue, type Pending, type QueueOp, type QueueStore } from './queue';
 import { AnswerLost, HubRefused, Unpaired, Unreachable, type DataSource } from './source';
 import type { Op, OpOutcome } from './types';
 
@@ -64,6 +64,24 @@ describe('WriteQueue', () => {
     expect(await q.flush(src)).toEqual({ sent: 2, stopped: null });
     expect(q.items).toEqual([]);
     expect(src.calls).toHaveLength(2);
+  });
+
+  it('queues a change only with the version that was seen (MOB-08)', async () => {
+    const q = new WriteQueue(memory(), ids, clock);
+    await expect(q.add({ op: 'set', id: 'garden/a', patch: { status: 'doing' } }, 'garden', 'A')).rejects.toThrow('if_match required');
+    expect(q.items).toEqual([]);
+    await q.add({ op: 'set', id: 'garden/a', patch: { status: 'doing' }, if_match: 'e1' }, 'garden', 'A');
+    expect(q.items).toHaveLength(1);
+  });
+
+  it('never sends the files of a new task with it: they follow as uploads', async () => {
+    const files = memoryFileStore();
+    await files.put('file-0001', new Blob(['abc']));
+    const q = new WriteQueue(memory(), ids, clock, () => {}, files);
+    await q.add(NEW, 'garden', 'A', [{ key: 'file-0001', name: 'p.jpg', type: 'image/jpeg', size: 3, kind: 'photo' }]);
+    const seen: QueueOp[] = [];
+    await q.flush(source([(op) => (seen.push(op), { ok: true, id: 'garden/a' }), () => ({ ok: true, id: 'garden/a' })]));
+    expect(seen[0]).toEqual(NEW);
   });
 
   it('keeps a write offline and stops (MOB-08)', async () => {
@@ -201,6 +219,22 @@ describe('restore (MSEC-13: what was kept is untrusted)', () => {
     expect(restore([{ ...good, area: '..' }], null)).toEqual([]);
   });
 
+  it('takes over an entry kept before the kit queue: area and files beside the write', () => {
+    const photo = { key: 'file-0001', name: 'p.jpg', type: 'image/jpeg', size: 3, kind: 'photo' };
+    const [item] = restore([{ ...good, files: [photo] }], null);
+    expect(item).toMatchObject({ scope: 'garden', op: { op: 'new', files: [photo] } });
+    expect(item).not.toHaveProperty('area');
+    expect(item).not.toHaveProperty('files');
+    // The kit's own shape reads back as it is.
+    expect(restore([{ ...good, area: undefined, scope: 'garden' }], null)).toHaveLength(1);
+  });
+
+  it('drops a kept change without the version that was seen (MOB-08)', () => {
+    const set = { op: 'set', id: 'garden/a', patch: { status: 'doing' } };
+    expect(restore([{ ...good, op: set }], null)).toEqual([]);
+    expect(restore([{ ...good, op: { ...set, if_match: 'e1' } }], null)).toHaveLength(1);
+  });
+
   it('drops writes of an area that may no longer be shown', () => {
     expect(restore([good], new Set(['kitchen']))).toEqual([]);
   });
@@ -233,8 +267,8 @@ describe('files of a new task', () => {
     const { q, files, store } = await queueWithFiles();
     await q.flush(source([() => new Unreachable()]));
     expect(q.items).toHaveLength(1);
-    expect(q.items[0]?.files?.map((f) => f.key)).toEqual([photo.key, voice.key]);
-    expect(store.saved?.[0]?.files).toHaveLength(2);
+    expect(filesOf(q.items[0]!).map((f) => f.key)).toEqual([photo.key, voice.key]);
+    expect(filesOf(store.saved![0]!)).toHaveLength(2);
     expect(files.files.size).toBe(2);
   });
 
@@ -295,10 +329,10 @@ describe('files of a new task', () => {
     const { store, files } = await queueWithFiles();
     await files.put('orphan-0001', new Blob(['x']));
     const raw = store.saved as unknown as Record<string, unknown>[];
-    (raw[0]!['files'] as unknown[]).push({ key: '../x', name: 'a', type: 'text/html', size: 1, kind: 'photo' });
+    ((raw[0]!['op'] as Record<string, unknown>)['files'] as unknown[]).push({ key: '../x', name: 'a', type: 'text/html', size: 1, kind: 'photo' });
     const q = new WriteQueue(store, ids, clock, () => {}, files);
     await q.load(new Set(['garden']));
-    expect(q.items[0]?.files?.map((f) => f.key)).toEqual([photo.key, voice.key]);
+    expect(filesOf(q.items[0]!).map((f) => f.key)).toEqual([photo.key, voice.key]);
     expect([...files.files.keys()].sort()).toEqual([photo.key, voice.key]);
     // An area that may not be shown any more takes its files with it.
     const hidden = new WriteQueue(store, ids, clock, () => {}, files);
