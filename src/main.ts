@@ -1,6 +1,6 @@
 import { mount } from 'svelte';
 import { ApiError, HubClient } from 'appkit-ui/client';
-import { deviceLogin, indexedDbDeviceStore, pairDevice, type DeviceDeps } from 'appkit-ui/device';
+import { canConfirm, confirmHeader, deviceLogin, indexedDbDeviceStore, pairDevice, type DeviceDeps } from 'appkit-ui/device';
 import { takePairingCode } from 'appkit-ui/pair';
 import App from './App.svelte';
 import { App as AppState, type AppDeps, type DeviceAccess } from './lib/app.svelte';
@@ -38,6 +38,8 @@ function deviceAccess(db: IDBFactory | undefined): DeviceAccess {
     },
     login: () => deviceLogin(deps),
     forget: () => store.clear(),
+    confirm: (method, path, body) => confirmHeader(deps, method, path, body),
+    canConfirm: () => canConfirm(store),
   };
 }
 
@@ -76,7 +78,8 @@ async function main(): Promise<void> {
   const db = indexedDb();
   const deps: AppDeps = {
     source: makeSource,
-    device: deviceAccess(db),
+    // The synthetic vault has no device: a start is confirmed with a word the fake checks for.
+    device: __FAKE__ ? { ...deviceAccess(db), confirm: async () => 'fake-confirmation', canConfirm: async () => true } : deviceAccess(db),
     fake: __FAKE__,
     viewStore: db ? viewStore(db) : memoryStore(),
     queueStore: db ? queueStore(db) : memoryStore(),

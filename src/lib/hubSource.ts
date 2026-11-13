@@ -2,11 +2,11 @@
 // the kit's `HubClient`; this file maps the routes and turns every failure into one of the errors of `source.ts`.
 
 import { HubClient } from 'appkit-ui/client';
-import { areaClasses, deviceLevel, donePreview, hubHello, OP_ERROR_CODES, opOutcome, taskDetail, vaultView } from './parse';
+import { areaClasses, deviceLevel, donePreview, hubHello, OP_ERROR_CODES, opOutcome, taskDetail, testingRun, testingSheets, vaultView } from './parse';
 import { pushKey, type PushSubscriptionBody } from './push';
 import type { Right } from './rights';
 import { AnswerLost, HubRefused, Unpaired, Unreachable, type DataSource } from './source';
-import type { DataClass, DonePreview, HubHello, Op, OpErrorCode, OpOutcome, TaskDetail, VaultView } from './types';
+import type { ConfirmRequest, DataClass, DonePreview, HubHello, Op, OpErrorCode, OpOutcome, TaskDetail, TestingRun, VaultView } from './types';
 
 /** How long a read may take before the page calls the hub unreachable (MSEC-08). */
 export const READ_TIMEOUT_MS = 15_000;
@@ -176,6 +176,35 @@ export class HubSource implements DataSource {
 
   pushUnsubscribe(): Promise<void> {
     return this.pushPost('/api/push/unsubscribe', {});
+  }
+
+  async testingSheets(id: string): Promise<string[]> {
+    return testingSheets(await this.read(`/api/tasks/testing_sheets?id=${idParam(id)}`), id);
+  }
+
+  async testingRun(): Promise<TestingRun> {
+    return testingRun(await this.read('/api/tasks/testing_run'));
+  }
+
+  async testingStart(id: string, confirm: ConfirmRequest): Promise<TestingRun> {
+    const path = '/api/tasks/testing_start';
+    // The very bytes that are sent are the bytes that are signed.
+    const body = JSON.stringify({ id });
+    const header = await confirm('POST', path, body);
+    let response: Response;
+    try {
+      response = await this.client.request(path, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Device-Confirm': header },
+        body,
+        signal: AbortSignal.timeout(WRITE_TIMEOUT_MS),
+      });
+    } catch (error) {
+      // Started or not, nobody knows: not sent again by itself (MOB-07).
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) throw new Unreachable(error);
+      throw new AnswerLost(error);
+    }
+    return testingRun(await this.body(response));
   }
 
   async donePreview(id: string): Promise<DonePreview> {

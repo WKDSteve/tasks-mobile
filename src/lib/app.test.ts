@@ -45,6 +45,8 @@ function fakeDevice(paired = false): FakeDevice {
     async forget() {
       d.paired = false;
     },
+    confirm: async (method, path, body) => `confirmed:${method} ${path} ${body}`,
+    canConfirm: async () => d.paired,
   };
   return d;
 }
@@ -57,6 +59,9 @@ function sourceFor(fake: FakeSource, dead: Set<string | null>): (token: string |
       kind: 'hub',
       hello: () => gate(() => fake.hello()),
       level: () => gate(() => fake.level()),
+      testingSheets: (id) => gate(() => fake.testingSheets(id)),
+      testingRun: () => gate(() => fake.testingRun()),
+      testingStart: (id, confirm) => gate(() => fake.testingStart(id, confirm)),
       vault: () => gate(() => fake.vault()),
       task: (id) => gate(() => fake.task(id)),
       write: (id, op) => gate(() => fake.write(id, op)),
@@ -1057,5 +1062,59 @@ describe('the level of this device', () => {
     expect(app.connection).toBe('live');
     expect(app.level).toBeNull();
     expect(app.may('change')).toBe(true);
+  });
+});
+
+describe('the test sheets of a task, run on the PC', () => {
+  const ID = 'garden/water-the-plants';
+
+  async function opened(over: { level?: 'change' | 'trigger'; confirmable?: boolean; linked?: boolean } = {}) {
+    const fake = new FakeSource();
+    fake.deviceLevel = over.level ?? 'trigger';
+    fake.testingLinked = over.linked ?? true;
+    const device = fakeDevice(over.confirmable ?? true);
+    const app = new App(deps(fake, { device }));
+    await app.start(null);
+    await app.openTask(app.view!.tasks.find((t) => t.id === ID)!);
+    return { app, fake };
+  }
+
+  it('shows the sheets, starts them with the confirmation of exactly that request, and follows the run', async () => {
+    const { app, fake } = await opened();
+    expect(app.sheets).toEqual(['watering.sheet.lua', 'hoses.sheet.lua']);
+    await app.startRun(app.opened!);
+    expect(fake.testingStarts).toEqual([{ id: ID, confirm: `confirmed:POST /api/tasks/testing_start {"id":"${ID}"}` }]);
+    expect(app.testing?.run).toMatchObject({ what: 'task', task: ID, running: true });
+    await app.refreshRun();
+    expect(app.testing?.run).toMatchObject({ running: false, verdict: 'green' });
+  });
+
+  it('starts nothing below trigger, or on a device that cannot confirm', async () => {
+    for (const over of [{ level: 'change' as const }, { confirmable: false }]) {
+      const { app, fake } = await opened(over);
+      await app.startRun(app.opened!);
+      expect(app.notice?.key).toBe('task.not_allowed');
+      expect(fake.testingStarts).toHaveLength(0);
+    }
+  });
+
+  it('says why there are no sheets when the PC is not paired with testing, and a refusal by its code', async () => {
+    const { app } = await opened({ linked: false });
+    expect(app.sheets).toBeNull();
+    expect(app.sheetsProblem).toBe('testing_not_linked');
+    const busy = await opened();
+    await busy.app.startRun(busy.app.opened!);
+    await busy.app.startRun(busy.app.opened!);
+    expect(busy.app.notice).toMatchObject({ key: 'testing.refused', params: { code: 'busy' } });
+    expect(busy.fake.testingStarts).toHaveLength(1);
+  });
+
+  it('forgets the sheets and the run when the device is unpaired', async () => {
+    const { app } = await opened();
+    await app.startRun(app.opened!);
+    await app.forget();
+    expect(app.sheets).toBeNull();
+    expect(app.testing).toBeNull();
+    expect(app.confirmable).toBe(false);
   });
 });

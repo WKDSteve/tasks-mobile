@@ -99,7 +99,16 @@ the internet for them, not the tunnel; the task itself still loads over the tunn
 site: allow notifications in its site settings, then turn them on here. **Turn notifications off** stops them, and so
 does disconnecting.
 
-## 6. Without a connection: an export file
+## 6. Test sheets of a task
+
+A task that a test sheet names shows **Test sheets** with their names. To run them on the PC, the PC must be paired
+with testing once (`tasks-hub testing link`, see the README of tasks-desktop) and this device must be at `trigger`
+(`tasks-hub devices level <id> trigger`). **Run on the PC** asks first; only then the device signs that one request,
+and the PC runs the sheets through testing. The page then shows *Running on the PC* and the result (green, red,
+refused, failed, stopped); **Reload state** asks again. A device paired before it had a confirmation key says so: pair
+it again to start runs. Nothing of a run of another area is shown, only that another run is under way.
+
+## 7. Without a connection: an export file
 
 When neither a tunnel nor Tailscale is at hand, the PC can write what this phone would be given to a file:
 
@@ -114,7 +123,7 @@ The page refuses a file that holds anything of another class, or that is older t
 list with "From a file: as of ...", read only: creating, changing and finishing say that they need the PC. Once the
 phone is paired and reaches the hub, the hub's list takes the place of the file.
 
-## 7. Disconnect
+## 8. Disconnect
 
 **Disconnect and delete the data** (at the bottom of **Waiting**, after a question) removes the device key, the kept list,
 what still waits, and the notifications.

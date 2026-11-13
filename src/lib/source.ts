@@ -4,7 +4,7 @@
 
 import type { PushSubscriptionBody } from './push';
 import type { Right } from './rights';
-import type { DonePreview, HubHello, Op, OpOutcome, TaskDetail, VaultView } from './types';
+import type { ConfirmRequest, DonePreview, HubHello, Op, OpOutcome, TaskDetail, TestingRun, VaultView } from './types';
 
 /** The hub could not be reached at all (no tunnel, no network): the page is offline, the write waits. */
 export class Unreachable extends Error {
@@ -62,6 +62,15 @@ export interface DataSource {
    * the answer is lost it is `AnswerLost`, and the user decides.
    */
   upload(id: string, file: Blob, name: string): Promise<OpOutcome>;
+  /** The names of the test sheets that name the task `id` (the testing hub, through this hub). */
+  testingSheets(id: string): Promise<string[]>;
+  /** Where the run of the testing hub stands. */
+  testingRun(): Promise<TestingRun>;
+  /**
+   * Start the test sheets of the task `id` on the PC. `confirm` signs exactly the request that is sent, and is called
+   * only here, after the person confirmed on the page. Sent once; a lost answer is `AnswerLost`.
+   */
+  testingStart(id: string, confirm: ConfirmRequest): Promise<TestingRun>;
   /** The hub's public key for Web Push (`GET /api/push/key`); `HubRefused` when the hub sends no notices. */
   pushKey(): Promise<string>;
   /** Subscribe this device for kinds of notices, in place of what it had. */

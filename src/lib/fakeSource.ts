@@ -6,11 +6,11 @@
 //
 // The names are neutral (APP-01): nothing here is a real area or a real task.
 
-import { areaClasses, deviceLevel, donePreview, hubHello, opOutcome, taskDetail, vaultView } from './parse';
+import { areaClasses, deviceLevel, donePreview, hubHello, testingRun, testingSheets, opOutcome, taskDetail, vaultView } from './parse';
 import { AnswerLost, HubRefused, Unreachable, type DataSource } from './source';
 import type { PushSubscriptionBody } from './push';
 import type { Right } from './rights';
-import type { DataClass, DonePreview, HubHello, Op, OpOutcome, TaskDetail, VaultView } from './types';
+import type { ConfirmRequest, DataClass, DonePreview, HubHello, Op, OpOutcome, TaskDetail, TestingRun, VaultView } from './types';
 
 interface FakeTask {
   id: string;
@@ -45,6 +45,10 @@ export interface FakeControls {
   loseNextUploadAnswer: boolean;
   /** The level the PC gave this device (`tasks-hub devices level`); `null`: a hub that does not tell it. */
   deviceLevel: Right | null;
+  /** Whether this hub is paired with the testing hub (`tasks-hub testing link`). */
+  testingLinked: boolean;
+  /** The runs started, by task, each with the confirmation it carried. */
+  readonly testingStarts: { id: string; confirm: string }[];
 }
 
 const HEAD = {
@@ -151,6 +155,11 @@ export class FakeSource implements DataSource, FakeControls {
   readonly kind = 'fake' as const;
   offline = false;
   deviceLevel: Right | null = 'change';
+  testingLinked = true;
+  readonly testingStarts: { id: string; confirm: string }[] = [];
+  /** The sheets that name a task, as a testing hub would find them. */
+  private readonly sheets: Record<string, string[]> = { 'garden/water-the-plants': ['watering.sheet.lua', 'hoses.sheet.lua'] };
+  private run: TestingRun['run'] = null;
   loseNextAnswer = false;
   holdTasks = false;
   private held: (() => void)[] = [];
@@ -232,6 +241,35 @@ export class FakeSource implements DataSource, FakeControls {
     this.reachable();
     if (this.deviceLevel === null) throw new HubRefused(403, 'not_for_devices', 'this route is not released for devices');
     return deviceLevel({ ...HEAD, kind: 'tasks.device', level: this.deviceLevel });
+  }
+
+  private testing(): void {
+    this.reachable();
+    if (!this.testingLinked) throw new HubRefused(409, 'testing_not_linked', 'this hub is not paired with the testing hub');
+  }
+
+  async testingSheets(id: string): Promise<string[]> {
+    this.testing();
+    return testingSheets({ kind: 'tasks.testing_sheets', schema: 1, id, sheets: this.sheets[id] ?? [] }, id);
+  }
+
+  async testingRun(): Promise<TestingRun> {
+    this.testing();
+    // A run has ended green by the next look (the synthetic testing hub is quick).
+    const run = this.run;
+    if (run?.what === 'task' && run.running) this.run = { ...run, running: false, verdict: 'green', exit: 0 };
+    return testingRun({ kind: 'tasks.testing_run', schema: 1, available: true, run: this.run });
+  }
+
+  async testingStart(id: string, confirm: ConfirmRequest): Promise<TestingRun> {
+    this.testing();
+    const header = await confirm('POST', '/api/tasks/testing_start', JSON.stringify({ id }));
+    if (this.deviceLevel !== 'trigger') throw new HubRefused(403, 'level_too_low', 'this device may not do this');
+    if (!(this.sheets[id]?.length)) throw new HubRefused(404, 'no_sheet', 'no sheet names this task');
+    if (this.run?.what === 'task' && this.run.running) throw new HubRefused(409, 'busy', 'a run is under way');
+    this.testingStarts.push({ id, confirm: header });
+    this.run = { what: 'task', task: id, running: true, verdict: null, exit: null };
+    return testingRun({ kind: 'tasks.testing_run', schema: 1, available: true, run: this.run });
   }
 
   async vault(): Promise<VaultView> {

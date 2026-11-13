@@ -7,12 +7,12 @@ import { ExportClassError, MAX_EXPORT_BYTES, phoneExport, ShapeError } from './p
 import { PUSH_KINDS, type PushAccess, type PushState } from './push';
 import { filesOf, WriteQueue, type Pending, type QueueStore } from './queue';
 import { allows, DEFAULT_RIGHTS, rightsOf, type Right } from './rights';
-import { HubRefused, Unpaired, Unreachable, type DataSource } from './source';
+import { AnswerLost, HubRefused, Unpaired, Unreachable, type DataSource } from './source';
 import type { KeptView } from './storage';
 import { isFresh } from './storage';
 import { localDay } from './today';
 import type { CacheStore } from 'appkit-ui/cache';
-import type { DonePreview, Op, Status, TaskBrief, TaskDetail, VaultView } from './types';
+import type { ConfirmRequest, DonePreview, Op, Status, TaskBrief, TaskDetail, TestingRun, VaultView } from './types';
 import type { TextKey } from './i18n';
 import type { Shared } from './share';
 
@@ -68,7 +68,14 @@ export interface DeviceAccess {
   login(): Promise<DeviceLogin>;
   /** Forget the device on this phone (revoking it is the PC's). */
   forget(): Promise<void>;
+  /** Sign one request for its confirmation (`x-device-confirm`); only after the person confirmed it on the page. */
+  confirm: ConfirmRequest;
+  /** Whether this device can confirm (it was paired with a confirmation key). */
+  canConfirm(): Promise<boolean>;
 }
+
+/** How long the page waits between two looks at a run of the test sheets. */
+export const RUN_POLL_MS = 3_000;
 
 /** The name a phone is paired under when the person gives none. */
 export const DEFAULT_DEVICE_NAME = 'Phone';
@@ -125,6 +132,14 @@ export class App {
    * changing need the hub; the page says so instead of queueing. The next answer of the hub takes its place.
    */
   fromFile = $state(false);
+  /** The test sheets that name the opened task (`null`: not asked, or no way to the testing hub: `sheetsProblem`). */
+  sheets = $state<string[] | null>(null);
+  /** Why there are no sheets to show: the code of the hub (`testing_not_linked`, ...). */
+  sheetsProblem = $state<string | null>(null);
+  /** Where the run of the testing hub stands, as last asked. */
+  testing = $state<TestingRun | null>(null);
+  /** Whether this device can confirm a start (paired with a confirmation key). */
+  confirmable = $state(false);
 
   readonly queue: WriteQueue;
   private token: string | null = null;
@@ -434,12 +449,86 @@ export class App {
     this.detail = null;
     this.preview = null;
     this.screen = 'task';
+    this.sheets = null;
+    this.sheetsProblem = null;
     if (!this.source || this.connection === 'offline') return;
     try {
       this.detail = await this.source.task(brief.id);
     } catch (error) {
       this.failed(error);
+      return;
     }
+    await this.loadSheets(brief.id);
+  }
+
+  /** The test sheets of the task, and whether a run can be confirmed here; a hub without the way says why. */
+  private async loadSheets(id: string): Promise<void> {
+    const source = this.source;
+    if (!source || this.connection !== 'live') return;
+    try {
+      this.confirmable = await this.deps.device.canConfirm();
+      const sheets = await source.testingSheets(id);
+      if (this.opened?.id !== id) return;
+      this.sheets = sheets;
+      if (sheets.length > 0) this.testing = await source.testingRun();
+    } catch (error) {
+      if (error instanceof HubRefused) this.sheetsProblem = error.code;
+      else if (!(error instanceof Unreachable)) this.failed(error);
+    }
+  }
+
+  /**
+   * Start the test sheets of the task on the PC, after the person confirmed it in the dialog: the device signs exactly
+   * this request. Sent once: a lost answer is said, never sent again by itself (MOB-07).
+   */
+  async startRun(task: TaskBrief): Promise<void> {
+    const source = this.source;
+    if (!source || this.connection !== 'live' || this.fromFile) {
+      this.notice = { key: 'testing.offline', tone: 'info' };
+      return;
+    }
+    if (!this.may('trigger') || !this.confirmable) {
+      this.notice = { key: 'task.not_allowed', tone: 'error' };
+      return;
+    }
+    this.busy = true;
+    try {
+      this.testing = await source.testingStart(task.id, this.deps.device.confirm);
+      this.notice = { key: 'testing.started', tone: 'info' };
+      this.followRun();
+    } catch (error) {
+      if (error instanceof AnswerLost) this.notice = { key: 'testing.lost', tone: 'error' };
+      else if (error instanceof HubRefused) this.notice = { key: 'testing.refused', params: { code: error.code }, tone: 'error' };
+      else this.failed(error);
+    } finally {
+      this.busy = false;
+    }
+  }
+
+  /** Look at the run again (the button, and the timer while it runs). */
+  async refreshRun(): Promise<void> {
+    const source = this.source;
+    if (!source || this.connection !== 'live') return;
+    try {
+      this.testing = await source.testingRun();
+    } catch (error) {
+      if (!(error instanceof HubRefused) && !(error instanceof Unreachable)) this.failed(error);
+    }
+  }
+
+  private runHandle: unknown = null;
+
+  /** While the run of the opened task runs and the page is in front, look again now and then. */
+  private followRun(): void {
+    const timer = this.deps.timer;
+    if (!timer || this.runHandle !== null) return;
+    const run = this.testing?.run;
+    if (!run || !run.running) return;
+    this.runHandle = timer.set(() => {
+      this.runHandle = null;
+      if (this.screen !== 'task' || !(this.deps.visible?.() ?? true)) return;
+      void this.refreshRun().then(() => this.followRun());
+    }, RUN_POLL_MS);
   }
 
   /** Queue a write and try to send it now; the list changes only with the hub's answer (MOB-07). */
@@ -654,6 +743,10 @@ export class App {
     this.fromFile = false;
     this.rights = DEFAULT_RIGHTS;
     this.level = null;
+    this.sheets = null;
+    this.sheetsProblem = null;
+    this.testing = null;
+    this.confirmable = false;
     this.detail = null;
     this.opened = null;
     this.connection = 'offline';

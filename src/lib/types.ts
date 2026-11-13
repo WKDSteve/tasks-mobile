@@ -130,3 +130,20 @@ export interface HubHello {
   engineReady: boolean;
   engineProblem: string | null;
 }
+
+/** How a run of the test sheets ended, as the testing hub says it. */
+export type RunVerdict = 'green' | 'red' | 'refused' | 'failed' | 'stopped';
+
+/** Where the run of the testing hub stands (through the tasks hub, `/api/tasks/testing_run`). */
+export interface TestingRun {
+  /** Whether the testing hub can run anything (its engine is there). */
+  available: boolean;
+  /** The run of a task this phone may see; another run only as `other`; `null`: no run yet. */
+  run:
+    | null
+    | { what: 'other'; running: boolean }
+    | { what: 'task'; task: string; running: boolean; verdict: RunVerdict | null; exit: number | null };
+}
+
+/** Signs one request for its confirmation on this device (`x-device-confirm`), after the person confirmed it. */
+export type ConfirmRequest = (method: string, pathAndQuery: string, body: string) => Promise<string>;

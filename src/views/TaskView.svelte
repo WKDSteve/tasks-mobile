@@ -11,6 +11,16 @@
 
   const task = $derived(app.detail?.task ?? app.opened);
   let chosen = $state<Status | ''>('');
+  /** The dialog that confirms a run of the test sheets is open (MUI-01: a step on the PC is confirmed). */
+  let askRun = $state(false);
+
+  // The run of this task, if the last look found one; another run is shown only as "another run".
+  const run = $derived.by(() => {
+    const r = app.testing?.run;
+    if (!r || !task) return null;
+    if (r.what === 'other') return r.running ? r : null;
+    return r.task === task.id ? r : null;
+  });
 
   // The choice follows the task's status when another task is shown or its status changed, not when the same task
   // is read again (a detail that arrives late must not undo what the user picked meanwhile), and after a conflict (the
@@ -63,6 +73,48 @@
           <button onclick={() => (app.preview = null)}>{t('task.cancel')}</button>
         </div>
       </div>
+    {/if}
+
+    {#if app.sheets !== null || app.sheetsProblem !== null}
+      <section class="sheets" data-testid="sheets">
+        <h3>{t('testing.title')}</h3>
+        {#if app.sheetsProblem === 'testing_not_linked'}
+          <p class="muted">{t('testing.unlinked')}</p>
+        {:else if app.sheetsProblem !== null}
+          <p class="muted">{t('testing.unavailable', { code: app.sheetsProblem })}</p>
+        {:else if app.sheets && app.sheets.length === 0}
+          <p class="muted">{t('testing.none')}</p>
+        {:else if app.sheets}
+          <ul>
+            {#each app.sheets as sheet (sheet)}
+              <li class="untrusted">{markHidden(sheet)}</li>
+            {/each}
+          </ul>
+          {#if run && run.what === 'task'}
+            <p data-testid="run-state" data-verdict={run.verdict ?? ''}>
+              {#if run.running}{t('testing.running')}{:else if run.verdict}{t(`testing.verdict.${run.verdict}` as TextKey)}{/if}
+            </p>
+            <p><button onclick={() => void app.refreshRun()} disabled={app.busy}>{t('testing.reload')}</button></p>
+          {:else if run && run.what === 'other'}
+            <p class="muted">{t('testing.other')}</p>
+          {/if}
+          {#if !app.may('trigger')}
+            <p class="muted" data-testid="no-trigger">{t('testing.no_trigger', { level: app.level ?? '' })}</p>
+          {:else if !app.confirmable}
+            <p class="muted" data-testid="no-key">{t('testing.no_key')}</p>
+          {:else if askRun}
+            <div class="confirm" role="dialog" aria-labelledby="run-title" data-testid="run-confirm">
+              <p id="run-title">{t('testing.confirm')}</p>
+              <div class="actions">
+                <button class="primary" disabled={app.busy} onclick={() => { askRun = false; void app.startRun(task); }}>{t('testing.confirm_go')}</button>
+                <button onclick={() => (askRun = false)}>{t('task.cancel')}</button>
+              </div>
+            </div>
+          {:else}
+            <p><button disabled={app.busy || (run?.running ?? false)} onclick={() => (askRun = true)}>{t('testing.start')}</button></p>
+          {/if}
+        {/if}
+      </section>
     {/if}
 
     {#if app.detail}

@@ -25,6 +25,11 @@ function source(answers: ((op: QueueOp) => OpOutcome | Error)[]): DataSource & {
     calls,
     hello: async () => ({ version: '', engineReady: true, engineProblem: null }),
     level: async () => 'change' as const,
+    testingSheets: async () => [],
+    testingRun: async () => ({ available: false, run: null }),
+    testingStart: async () => {
+      throw new Error('unused');
+    },
     vault: async () => ({ rev: 'r', tasks: [], areas: [], hiddenAreas: 0, counts: {}, next: [] }),
     task: async () => {
       throw new Error('unused');

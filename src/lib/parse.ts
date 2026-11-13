@@ -15,6 +15,8 @@ import type {
   StatusCounts,
   TaskBrief,
   TaskDetail,
+  TestingRun,
+  RunVerdict,
   VaultView,
 } from './types';
 import { STATUSES } from './types';
@@ -350,6 +352,35 @@ export function deviceLevel(doc: unknown): Right {
   const level = doc['level'];
   if (typeof level !== 'string' || !(LEVELS as readonly string[]).includes(level)) throw new ShapeError('device level');
   return level as Right;
+}
+
+/** `/api/tasks/testing_sheets`: the names of the sheets that name the task `id` (only for that id). */
+export function testingSheets(doc: unknown, id: string): string[] {
+  if (!isObj(doc) || doc['kind'] !== 'tasks.testing_sheets' || doc['id'] !== id || !Array.isArray(doc['sheets'])) {
+    throw new ShapeError('testing sheets');
+  }
+  return doc['sheets']
+    .map((s) => str(s, 200))
+    .filter((s): s is string => s !== null && s !== '')
+    .slice(0, 50);
+}
+
+const VERDICTS: readonly RunVerdict[] = ['green', 'red', 'refused', 'failed', 'stopped'];
+
+/** `/api/tasks/testing_run` (and the answer of a start): where the run stands; a field of the wrong type is left out. */
+export function testingRun(doc: unknown): TestingRun {
+  if (!isObj(doc) || doc['kind'] !== 'tasks.testing_run') throw new ShapeError('testing run');
+  const available = doc['available'] === true;
+  const run = doc['run'];
+  if (!isObj(run)) return { available, run: null };
+  const running = run['running'] === true;
+  if (run['what'] === 'task' && isTaskId(run['task'])) {
+    const verdict = typeof run['verdict'] === 'string' && (VERDICTS as readonly string[]).includes(run['verdict'])
+      ? (run['verdict'] as RunVerdict)
+      : null;
+    return { available, run: { what: 'task', task: run['task'], running, verdict, exit: int(run['exit']) } };
+  }
+  return { available, run: { what: 'other', running } };
 }
 
 /** `hello` of the hub. */
