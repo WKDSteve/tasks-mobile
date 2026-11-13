@@ -55,6 +55,10 @@ describe('the service worker shows a notice', () => {
     const en = worker('en-GB');
     await en.fire('push', pushEvent({ kind: 'decision', id: null }));
     expect(en.shown[0]!.options['body']).toBe('A task waits for your decision.');
+    // the notice of the day names no task: the reminders of today, plural
+    const day = worker();
+    await day.fire('push', pushEvent({ kind: 'remind', id: null }));
+    expect(day.shown[0]!.options).toMatchObject({ body: 'Heute sind Erinnerungen fällig.', tag: 'remind:', data: { id: null } });
   });
 
   it('shows nothing for a notice that is not of this app', async () => {

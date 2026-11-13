@@ -37,10 +37,13 @@ const TASK_ID = /^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/;
 const WORDS = {
   de: {
     remind: 'Eine Erinnerung ist fällig.',
+    // the hub's notice of the day (tasks-desktop b171dff): no id, the page opens on Today
+    remind_day: 'Heute sind Erinnerungen fällig.',
     decision: 'Eine Task wartet auf deine Entscheidung.',
   },
   en: {
     remind: 'A reminder is due.',
+    remind_day: 'Reminders are due today.',
     decision: 'A task waits for your decision.',
   },
 };
@@ -69,7 +72,7 @@ self.addEventListener('push', (event) => {
   const lang = (self.navigator.language || 'en').toLowerCase().startsWith('de') ? 'de' : 'en';
   event.waitUntil(
     self.registration.showNotification('tasks', {
-      body: WORDS[lang][notice.kind],
+      body: WORDS[lang][notice.kind === 'remind' && notice.id === null ? 'remind_day' : notice.kind],
       icon: new URL('icons/icon-192.png', self.registration.scope).href,
       badge: new URL('icons/icon-monochrome-192.png', self.registration.scope).href,
       // One notice per task and kind: a second one replaces the first.
