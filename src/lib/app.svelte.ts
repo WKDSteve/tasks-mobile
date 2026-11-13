@@ -470,7 +470,7 @@ export class App {
       const sheets = await source.testingSheets(id);
       if (this.opened?.id !== id) return;
       this.sheets = sheets;
-      if (sheets.length > 0) this.testing = await source.testingRun();
+      if (sheets && sheets.length > 0) this.testing = await source.testingRun();
     } catch (error) {
       if (error instanceof HubRefused) this.sheetsProblem = error.code;
       else if (!(error instanceof Unreachable)) this.failed(error);

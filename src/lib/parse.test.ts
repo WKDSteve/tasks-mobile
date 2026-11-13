@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { areaClasses, dataClassOf, deviceLevel, donePreview, ExportClassError, isTaskId, MAX_NEXT, nextPicks, opOutcome, phoneExport, ShapeError, statusCounts, taskBrief, taskDetail, vaultView } from './parse';
+import { areaClasses, dataClassOf, deviceLevel, testingSheets, donePreview, ExportClassError, isTaskId, MAX_NEXT, nextPicks, opOutcome, phoneExport, ShapeError, statusCounts, taskBrief, taskDetail, vaultView } from './parse';
 
 const classes = new Map([
   ['garden', 'public' as const],
@@ -223,5 +223,13 @@ describe('the level of the device', () => {
     for (const doc of [{ kind: 'tasks.device', level: 'admin' }, { kind: 'tasks.device' }, { kind: 'tasks.hello', level: 'read' }, null]) {
       expect(() => deviceLevel(doc)).toThrow(ShapeError);
     }
+  });
+});
+
+describe('the test sheets of a task', () => {
+  it('reads the names for this task only, and no testing as nothing to show', () => {
+    expect(testingSheets({ kind: 'tasks.testing_sheets', id: 'a/b', linked: true, sheets: ['x.lua', 1, ''] }, 'a/b')).toEqual(['x.lua']);
+    expect(testingSheets({ kind: 'tasks.testing_sheets', id: 'a/b', linked: false, sheets: [] }, 'a/b')).toBeNull();
+    expect(() => testingSheets({ kind: 'tasks.testing_sheets', id: 'a/c', linked: true, sheets: [] }, 'a/b')).toThrow(ShapeError);
   });
 });

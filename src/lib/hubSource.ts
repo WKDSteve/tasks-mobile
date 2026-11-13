@@ -178,7 +178,7 @@ export class HubSource implements DataSource {
     return this.pushPost('/api/push/unsubscribe', {});
   }
 
-  async testingSheets(id: string): Promise<string[]> {
+  async testingSheets(id: string): Promise<string[] | null> {
     return testingSheets(await this.read(`/api/tasks/testing_sheets?id=${idParam(id)}`), id);
   }
 

@@ -248,9 +248,11 @@ export class FakeSource implements DataSource, FakeControls {
     if (!this.testingLinked) throw new HubRefused(409, 'testing_not_linked', 'this hub is not paired with the testing hub');
   }
 
-  async testingSheets(id: string): Promise<string[]> {
-    this.testing();
-    return testingSheets({ kind: 'tasks.testing_sheets', schema: 1, id, sheets: this.sheets[id] ?? [] }, id);
+  async testingSheets(id: string): Promise<string[] | null> {
+    this.reachable();
+    // As the hub: no testing is no error, only `linked: false`.
+    const doc = { kind: 'tasks.testing_sheets', schema: 1, id, linked: this.testingLinked, sheets: this.testingLinked ? (this.sheets[id] ?? []) : [] };
+    return testingSheets(doc, id);
   }
 
   async testingRun(): Promise<TestingRun> {

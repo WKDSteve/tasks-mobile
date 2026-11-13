@@ -1098,10 +1098,10 @@ describe('the test sheets of a task, run on the PC', () => {
     }
   });
 
-  it('says why there are no sheets when the PC is not paired with testing, and a refusal by its code', async () => {
+  it('shows nothing when the PC is not paired with testing (the usual case), and a refusal by its code', async () => {
     const { app } = await opened({ linked: false });
     expect(app.sheets).toBeNull();
-    expect(app.sheetsProblem).toBe('testing_not_linked');
+    expect(app.sheetsProblem).toBeNull();
     const busy = await opened();
     await busy.app.startRun(busy.app.opened!);
     await busy.app.startRun(busy.app.opened!);

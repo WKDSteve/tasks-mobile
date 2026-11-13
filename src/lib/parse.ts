@@ -354,11 +354,15 @@ export function deviceLevel(doc: unknown): Right {
   return level as Right;
 }
 
-/** `/api/tasks/testing_sheets`: the names of the sheets that name the task `id` (only for that id). */
-export function testingSheets(doc: unknown, id: string): string[] {
+/**
+ * `/api/tasks/testing_sheets`: the names of the sheets that name the task `id` (only for that id); `null` when the PC is
+ * not paired with testing (`linked: false`), which is the usual case and nothing to show.
+ */
+export function testingSheets(doc: unknown, id: string): string[] | null {
   if (!isObj(doc) || doc['kind'] !== 'tasks.testing_sheets' || doc['id'] !== id || !Array.isArray(doc['sheets'])) {
     throw new ShapeError('testing sheets');
   }
+  if (doc['linked'] === false) return null;
   return doc['sheets']
     .map((s) => str(s, 200))
     .filter((s): s is string => s !== null && s !== '')

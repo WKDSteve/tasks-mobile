@@ -62,8 +62,8 @@ export interface DataSource {
    * the answer is lost it is `AnswerLost`, and the user decides.
    */
   upload(id: string, file: Blob, name: string): Promise<OpOutcome>;
-  /** The names of the test sheets that name the task `id` (the testing hub, through this hub). */
-  testingSheets(id: string): Promise<string[]>;
+  /** The names of the test sheets that name the task `id` (the testing hub, through this hub); `null`: no testing. */
+  testingSheets(id: string): Promise<string[] | null>;
   /** Where the run of the testing hub stands. */
   testingRun(): Promise<TestingRun>;
   /**
