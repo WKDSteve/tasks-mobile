@@ -142,6 +142,18 @@ const de = {
   'queue.full': 'Die Warteschlange ist voll. Erst verbinden und senden.',
   'error.shape': 'Der PC hat etwas geschickt, das diese Seite nicht lesen kann.',
   'error.refused': 'Der PC hat abgelehnt: {message}',
+  'code.not_found': 'gibt es am PC nicht (mehr)',
+  'code.conflict': 'am PC geändert',
+  'code.exists': 'gibt es schon',
+  'code.invalid_argument': 'so nicht möglich',
+  'code.forbidden': 'nicht erlaubt',
+  'code.locked': 'die Datei ist am PC gerade gesperrt, später erneut senden',
+  'code.not_for_devices': 'geht nur am PC',
+  'code.level_too_low': 'dieses Gerät darf das nicht (Stufe am PC ändern)',
+  'code.vault_changed': 'am PC wurde ein anderer Vault gewählt',
+  'code.file_gone': 'die Datei ist nicht mehr auf dem Handy',
+  'code.no_id': 'die Engine hat keine Task für die Datei genannt',
+  'code.payload_too_large': 'zu groß',
   'error.storage': 'Dieses Gerät speichert nichts dauerhaft; Wartendes geht beim Schließen verloren.',
   'about.version': 'tasks-mobile {version}',
 } as const;
@@ -287,6 +299,18 @@ const en: Record<TextKey, string> = {
   'queue.full': 'The queue is full. Connect and send first.',
   'error.shape': 'The PC sent something this page cannot read.',
   'error.refused': 'The PC refused: {message}',
+  'code.not_found': 'not (or no longer) on the PC',
+  'code.conflict': 'changed on the PC',
+  'code.exists': 'there already',
+  'code.invalid_argument': 'not possible like this',
+  'code.forbidden': 'not allowed',
+  'code.locked': 'the file is locked on the PC right now, send it again later',
+  'code.not_for_devices': 'only on the PC',
+  'code.level_too_low': 'this device may not do that (change its level on the PC)',
+  'code.vault_changed': 'another vault was chosen on the PC',
+  'code.file_gone': 'the file is no longer on this phone',
+  'code.no_id': 'the engine named no task for the file',
+  'code.payload_too_large': 'too large',
   'error.storage': 'This device keeps nothing; what waits is lost when the app is closed.',
   'about.version': 'tasks-mobile {version}',
 };
@@ -299,6 +323,17 @@ export function chooseLang(preferred: readonly string[]): Lang {
 }
 
 export type Translate = (key: TextKey, params?: Record<string, string | number>) => string;
+
+/**
+ * What a refusal says: the words of the hub when it sent any, else the page's words for its code (a phone gets codes
+ * only, since the hub cuts the engine's words for a device: they may name what is private), else the code itself.
+ */
+export function reason(t: Translate, message: string | undefined, code: string | undefined): string {
+  if (message && message.trim() !== '') return message;
+  if (!code) return '';
+  const key = `code.${code}`;
+  return Object.hasOwn(de, key) ? t(key as TextKey) : code;
+}
 
 export function translator(lang: Lang): Translate {
   const dictionary = DICTIONARIES[lang];

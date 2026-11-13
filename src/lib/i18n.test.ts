@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { chooseLang, DICTIONARIES, translator } from './i18n';
+import { chooseLang, DICTIONARIES, reason, translator } from './i18n';
 
 describe('i18n (WEB-24)', () => {
   it('has the same keys in both languages, none empty', () => {
@@ -22,5 +22,18 @@ describe('i18n (WEB-24)', () => {
     expect(chooseLang(['de-AT', 'en'])).toBe('de');
     expect(chooseLang(['fr'])).toBe('en');
     expect(translator('de')('list.questions', { n: 2 })).toBe('2 offene Fragen');
+  });
+});
+
+describe('the reason of a refusal', () => {
+  const t = translator('en');
+  it('takes the words of the hub, else the page words for the code, else the code', () => {
+    expect(reason(t, 'the file changed', 'conflict')).toBe('the file changed');
+    expect(reason(t, '', 'not_for_devices')).toBe('only on the PC');
+    expect(reason(t, '   ', 'level_too_low')).toBe('this device may not do that (change its level on the PC)');
+    expect(reason(t, '', 'something_new')).toBe('something_new');
+    expect(reason(t, undefined, undefined)).toBe('');
+    // a code is not a way into the dictionary: only the code.* words are used
+    expect(reason(t, '', 'refused')).toBe('refused');
   });
 });

@@ -933,3 +933,16 @@ describe('the draft of the form outlives an end of the app', () => {
     expect(d).toEqual({ title: 'x'.repeat(400), context: '', area: '', fromShare: false, files: [{ key: 'good-key-2', kind: 'voice' }] });
   });
 });
+
+describe('a refusal without words', () => {
+  it('passes the code on, so the page can say it in its own words', async () => {
+    const fake = new FakeSource();
+    const app = new App(deps(fake));
+    await app.start(null);
+    fake.task = async () => {
+      throw new HubRefused(404, 'not_found', '');
+    };
+    await app.openTask(app.view!.tasks[0]!);
+    expect(app.notice).toMatchObject({ key: 'error.refused', params: { message: '', code: 'not_found' } });
+  });
+});

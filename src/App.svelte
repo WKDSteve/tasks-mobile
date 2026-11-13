@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { App } from './lib/app.svelte';
-  import { chooseLang, translator } from './lib/i18n';
+  import { chooseLang, reason, translator } from './lib/i18n';
   import type { Shared } from './lib/share';
   import StatusBar from './views/StatusBar.svelte';
   import Pair from './views/Pair.svelte';
@@ -21,6 +21,12 @@
   if (shared) app.takeShare(shared);
 
   const waiting = $derived(app.pending.length);
+
+  // A refusal names its reason: the hub's words, or the page's for the code.
+  function shownParams(params: Record<string, string | number> | undefined): Record<string, string | number> | undefined {
+    if (!params || !('code' in params)) return params;
+    return { ...params, message: reason(t, String(params['message'] ?? ''), String(params['code'])) };
+  }
 </script>
 
 <header>
@@ -39,7 +45,7 @@
 
   {#if app.notice}
     <p class="notice" class:bad={app.notice.tone === 'error'} role={app.notice.tone === 'error' ? 'alert' : 'status'} data-testid="notice">
-      {t(app.notice.key, app.notice.params)}
+      {t(app.notice.key, shownParams(app.notice.params))}
     </p>
   {/if}
 </header>

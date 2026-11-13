@@ -282,7 +282,8 @@ export class App {
       return;
     }
     if (error instanceof ShapeError) this.notice = { key: 'error.shape', tone: 'error' };
-    else if (error instanceof HubRefused) this.notice = { key: 'error.refused', params: { message: error.message }, tone: 'error' };
+    // the code goes with it: a phone gets no words of the engine (the hub cuts them), the page says the code in its own
+    else if (error instanceof HubRefused) this.notice = { key: 'error.refused', params: { message: error.message, code: error.code }, tone: 'error' };
     else this.notice = { key: 'error.refused', params: { message: error instanceof Error ? error.message : String(error) }, tone: 'error' };
   }
 

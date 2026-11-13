@@ -3,7 +3,7 @@
   // the user can do about it.
   import { markHidden } from 'appkit-ui/text';
   import type { App } from '../lib/app.svelte';
-  import type { Translate, TextKey } from '../lib/i18n';
+  import { reason, type Translate, type TextKey } from '../lib/i18n';
   import type { Pending } from '../lib/queue';
 
   let { app, t }: { app: App; t: Translate } = $props();
@@ -37,7 +37,7 @@
       <li data-state={item.state}>
         <p class="what untrusted">{what(item)}</p>
         <p class:bad={item.state === 'conflict' || item.state === 'refused' || item.state === 'unknown'}>
-          {t(`queue.state.${item.state}` as TextKey)}{#if item.message && item.state !== 'conflict'}: <span class="untrusted">{markHidden(item.message)}</span>{/if}
+          {t(`queue.state.${item.state}` as TextKey)}{#if item.state !== 'conflict' && reason(t, item.message, item.code)}: <span class="untrusted">{markHidden(reason(t, item.message, item.code))}</span>{/if}
         </p>
         {#if item.message && item.state === 'conflict'}
           <!-- The engine's words name versions by hash: there for whoever wants them, not in the way. -->
