@@ -73,3 +73,17 @@ with the web rules of `native`.
 ## License
 
 MIT, see [LICENSE](LICENSE).
+
+<!-- connections:begin (written by the app-icons tool of the workshop; change integrations.json there, not this block) -->
+## Connections
+
+![tasks-mobile: what it uses and what uses it](assets/graphs/tasks-mobile.png)
+
+**Uses**
+
+- [appkit](https://github.com/WKDSteve/appkit): The phone page of tasks-mobile uses the page kit of appkit (`appkit-ui`): its tokens, the hub client and the pairing code. ([picture](assets/graphs/pair/tasks-mobile--appkit.png))
+
+**Used by**
+
+- [tasks-desktop](https://github.com/WKDSteve/tasks-desktop): The hub of tasks-desktop serves the phone page of tasks-mobile under `/m/`; `mobile.lock` pins the commit that is built into it. ([picture](assets/graphs/pair/tasks-desktop--tasks-mobile.png))
+<!-- connections:end -->
