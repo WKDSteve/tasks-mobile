@@ -36,6 +36,7 @@
     if (app.checkFile({ blob, kind }, target.files.length) !== null) return;
     const id = target.files.reduce((max, f) => Math.max(max, f.id), 0) + 1;
     target.files = [...target.files, { id, blob, kind, url: URL.createObjectURL(blob) }];
+    void app.keepForm();
   }
 
   function remove(id: number): void {
@@ -43,6 +44,17 @@
     if (gone) URL.revokeObjectURL(gone.url);
     form.files = form.files.filter((f) => f.id !== id);
     app.fileProblem = null;
+    void app.keepForm();
+  }
+
+  // What is typed is kept a moment after the last key (the app may be ended in the background at any time).
+  let keepTimer: ReturnType<typeof setTimeout> | null = null;
+  function typed(): void {
+    if (keepTimer !== null) clearTimeout(keepTimer);
+    keepTimer = setTimeout(() => {
+      keepTimer = null;
+      void app.keepForm();
+    }, 400);
   }
 
   function picked(event: Event): void {
@@ -95,6 +107,10 @@
 
   // Left while recording: the note is ended and kept in the form (said, so it is not a surprise later).
   onDestroy(() => {
+    if (keepTimer !== null) {
+      clearTimeout(keepTimer);
+      void app.keepForm();
+    }
     if (!recording) return;
     app.notice = { key: 'capture.voice_kept', tone: 'info' };
     void stopVoice();
@@ -128,7 +144,7 @@
   }
 </script>
 
-<form onsubmit={submit} novalidate>
+<form onsubmit={submit} oninput={typed} novalidate>
   {#if form.fromShare}
     <p class="muted" data-testid="from-share">{t('capture.shared')}</p>
   {/if}

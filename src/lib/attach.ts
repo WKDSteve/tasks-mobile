@@ -117,9 +117,12 @@ export function memoryFileStore(): FileStore & { files: Map<string, Blob> } {
   };
 }
 
-/** The files in IndexedDB of this origin (`tasks-mobile-files`); they go when the phone is unpaired (MSEC-12). */
-export function indexedDbFileStore(factory: IDBFactory): FileStore {
-  const DB = 'tasks-mobile-files';
+/**
+ * The files in IndexedDB of this origin (`tasks-mobile-files`; the draft of the form keeps its own,
+ * `tasks-mobile-draft-files`); they go when the phone is unpaired (MSEC-12).
+ */
+export function indexedDbFileStore(factory: IDBFactory, name = 'tasks-mobile-files'): FileStore {
+  const DB = name;
   const STORE = 'files';
   let opened: Promise<IDBDatabase> | null = null;
   const db = (): Promise<IDBDatabase> => {

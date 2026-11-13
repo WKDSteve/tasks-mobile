@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { App, pairingCodeOf, type AppDeps, type DeviceAccess, type DeviceLogin } from './app.svelte';
 import { FakeSource } from './fakeSource';
 import { memoryFileStore } from './attach';
+import { restoreDraft, type KeptDraft } from './capture';
 import { memoryStore } from './storage';
 import type { KeptView } from './storage';
 import { HubRefused, Unpaired, type DataSource } from './source';
@@ -850,4 +851,85 @@ describe('notices do not hold up the start', () => {
     expect(app.pushState).toBe('off');
     expect(app.view).not.toBeNull();
   }, 5_000);
+});
+
+describe('the draft of the form outlives an end of the app', () => {
+  function stores() {
+    return { draftStore: memoryStore<KeptDraft>(), draftFiles: memoryFileStore() };
+  }
+  const blob = () => new Blob(['abc'], { type: 'image/png' });
+
+  it('keeps text and files, and brings them back in a new start', async () => {
+    const kept = stores();
+    const first = new App(deps(new FakeSource(), kept));
+    await first.start(null);
+    first.form.title = 'Half typed';
+    first.form.context = 'and a line';
+    first.form.files = [{ id: 1, blob: blob(), kind: 'photo', url: 'blob:x' }];
+    await first.keepForm();
+    expect(kept.draftFiles.files.size).toBe(1);
+    const second = new App(deps(new FakeSource(), kept));
+    await second.start(null);
+    expect(second.form).toMatchObject({ title: 'Half typed', context: 'and a line', files: [{ kind: 'photo' }] });
+    expect(second.form.files[0]!.blob.size).toBe(3);
+  });
+
+  it('a share of the new start is laid over the draft, nothing typed is lost', async () => {
+    const kept = stores();
+    const first = new App(deps(new FakeSource(), kept));
+    await first.start(null);
+    first.form.title = 'Mine';
+    await first.keepForm();
+    const second = new App(deps(new FakeSource(), kept));
+    second.takeShare({ title: 'An article', context: 'https://example.org/a' });
+    await second.start(null);
+    expect(second.form).toMatchObject({ title: 'Mine', context: 'An article\nhttps://example.org/a', fromShare: true });
+  });
+
+  it('creating, discarding and unpairing take the kept draft away (MSEC-12)', async () => {
+    const kept = stores();
+    const app = new App(deps(new FakeSource(), kept));
+    await app.start(null);
+    app.form.title = 'Gone soon';
+    app.form.files = [{ id: 1, blob: blob(), kind: 'photo', url: 'blob:x' }];
+    await app.keepForm();
+    app.discardForm();
+    await app.kept;
+    expect(kept.draftStore.value).toBeNull();
+    expect(kept.draftFiles.files.size).toBe(0);
+    app.form.title = 'Again';
+    await app.keepForm();
+    await app.forget();
+    await app.kept;
+    expect(kept.draftStore.value).toBeNull();
+  });
+
+  it('a removed file leaves the kept draft too', async () => {
+    const kept = stores();
+    const app = new App(deps(new FakeSource(), kept));
+    await app.start(null);
+    app.form.title = 'Two files';
+    app.form.files = [
+      { id: 1, blob: blob(), kind: 'photo', url: 'blob:a' },
+      { id: 2, blob: blob(), kind: 'voice', url: 'blob:b' },
+    ];
+    await app.keepForm();
+    app.form.files = app.form.files.slice(1);
+    await app.keepForm();
+    expect(kept.draftFiles.files.size).toBe(1);
+    expect(kept.draftStore.value?.files).toEqual([{ key: app.form.files[0]!.key, kind: 'voice' }]);
+  });
+
+  it('reads a kept draft back only as the form takes it (MSEC-13)', () => {
+    expect(restoreDraft(null)).toBeNull();
+    expect(restoreDraft({ title: 1, context: '', area: '' })).toBeNull();
+    const d = restoreDraft({
+      title: 'x'.repeat(500),
+      context: '',
+      area: '../secret',
+      fromShare: 'yes',
+      files: [{ key: 'k', kind: 'photo' }, { key: 'good-key-1', kind: 'video' }, { key: 'good-key-2', kind: 'voice' }],
+    });
+    expect(d).toEqual({ title: 'x'.repeat(400), context: '', area: '', fromShare: false, files: [{ key: 'good-key-2', kind: 'voice' }] });
+  });
 });

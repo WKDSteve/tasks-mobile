@@ -34,9 +34,10 @@ keys first (appkit, plan "Mobile Basis").
 - **The hub does not filter for the phone yet.** Until it does (appkit, "Mobile Datenklassen fail closed"), the
   documents of hidden areas still travel through the tunnel to the page and are dropped there. The page never shows or
   stores them, but they cross the wire.
-- What is kept on the phone: the last list (shown areas only) and the queue of writes, in IndexedDB of the page's
-  origin. Both are read back as untrusted and checked field by field (MSEC-13). "Disconnect and delete the data"
-  removes the device key, the list and the queue.
+- What is kept on the phone: the last list (shown areas only), the queue of writes and the draft of the capture form
+  (its text and files, until it is created or discarded), in IndexedDB of the page's origin. All are read back as
+  untrusted and checked field by field (MSEC-13). "Disconnect and delete the data" removes the device key, the list,
+  the queue and the draft.
 - The service worker keeps the page itself (HTML, script, style, icons), never a route of the hub (PWA-02).
 - Notifications (Web Push from the hub): the message carries the kind (`remind`, `decision`) and at most the id of a
   task of a released area, never its title or text (PWA-06); the push service of the browser is somebody else's server.

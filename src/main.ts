@@ -9,7 +9,7 @@ import { HubSource } from './lib/hubSource';
 import { browserPush, taskFromAddress, withoutTask } from './lib/push';
 import { readShare, withoutShare } from './lib/share';
 import type { DataSource } from './lib/source';
-import { memoryStore, queueStore, viewStore } from './lib/storage';
+import { draftStore, memoryStore, queueStore, viewStore } from './lib/storage';
 import { workerUrl } from './lib/worker';
 import './app.css';
 
@@ -81,6 +81,8 @@ async function main(): Promise<void> {
     viewStore: db ? viewStore(db) : memoryStore(),
     queueStore: db ? queueStore(db) : memoryStore(),
     fileStore: db ? indexedDbFileStore(db) : memoryFileStore(),
+    draftStore: db ? draftStore(db) : memoryStore(),
+    draftFiles: db ? indexedDbFileStore(db, 'tasks-mobile-draft-files') : memoryFileStore(),
     now: () => new Date(),
     newId: () => crypto.randomUUID(),
     timer: { set: (run, ms) => window.setTimeout(run, ms), clear: (handle) => window.clearTimeout(handle as number) },

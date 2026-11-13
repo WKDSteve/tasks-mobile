@@ -23,6 +23,8 @@ export interface PickedFile {
   kind: AttachmentKind;
   /** A `blob:` address of this page for the preview; given back when the file leaves the form. */
   url: string;
+  /** Where the blob is kept in the draft's file store, once the draft was kept. */
+  key?: string;
 }
 
 /**
@@ -33,6 +35,41 @@ export interface CaptureForm extends Draft {
   /** Filled from a share of another app (said above the form). */
   fromShare: boolean;
   files: PickedFile[];
+}
+
+/** A file of the kept draft: its blob lies in the draft's file store under `key`. */
+export interface KeptDraftFile {
+  key: string;
+  kind: AttachmentKind;
+}
+
+/** The draft as the phone keeps it (text and the keys of its files); read back as untrusted (MSEC-13). */
+export interface KeptDraft {
+  area: string;
+  title: string;
+  context: string;
+  fromShare: boolean;
+  files: KeptDraftFile[];
+}
+
+const KEY = /^[A-Za-z0-9-]{8,64}$/;
+
+/** A kept draft read back: every field checked and cut to what the form takes; `null` for anything else. */
+export function restoreDraft(raw: unknown): KeptDraft | null {
+  if (typeof raw !== 'object' || raw === null) return null;
+  const r = raw as Record<string, unknown>;
+  const text = (v: unknown, max: number) => (typeof v === 'string' ? [...v].slice(0, max).join('') : null);
+  const title = text(r['title'], 400);
+  const context = text(r['context'], 4000);
+  const area = text(r['area'], 100);
+  if (title === null || context === null || area === null) return null;
+  const files: KeptDraftFile[] = [];
+  for (const f of Array.isArray(r['files']) ? r['files'].slice(0, 3) : []) {
+    if (typeof f !== 'object' || f === null) continue;
+    const { key, kind } = f as Record<string, unknown>;
+    if (typeof key === 'string' && KEY.test(key) && (kind === 'photo' || kind === 'voice')) files.push({ key, kind });
+  }
+  return { area: /^[A-Za-z0-9._-]*$/.test(area) ? area : '', title, context, fromShare: r['fromShare'] === true, files };
 }
 
 export function emptyForm(): CaptureForm {

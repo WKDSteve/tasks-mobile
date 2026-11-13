@@ -180,3 +180,27 @@ test('a file whose answer was lost can be sent again and arrives once', async ({
   await expect(page.getByTestId('queue')).toHaveCount(0);
   expect(await uploads(page)).toHaveLength(1);
 });
+
+test('a draft outlives an end of the app: title, context and photo are back after a reload', async ({ page }) => {
+  await open(page);
+  await newCapture(page, 'Survives the reload');
+  await page.getByLabel('One sentence of context (optional)').fill('typed before the end');
+  await addPhoto(page);
+  await expect(page.getByTestId('attachments').locator('img')).toHaveCount(1);
+  // The text is kept a moment after the last key; the page then goes away as an ended app does.
+  await page.waitForTimeout(800);
+  await page.reload();
+  await expect(page.getByTestId('connection')).toHaveAttribute('data-state', 'live');
+  await page.getByRole('button', { name: 'New', exact: true }).click();
+  await expect(page.getByLabel('Title')).toHaveValue('Survives the reload');
+  await expect(page.getByLabel('One sentence of context (optional)')).toHaveValue('typed before the end');
+  await expect(page.getByTestId('attachments').locator('img')).toHaveCount(1);
+  // Created, the draft is gone: a reload brings an empty form.
+  await page.getByRole('button', { name: 'Create' }).click();
+  await expect(page.getByTestId('notice')).toContainText('Created');
+  await page.waitForTimeout(300);
+  await page.reload();
+  await page.getByRole('button', { name: 'New', exact: true }).click();
+  await expect(page.getByLabel('Title')).toHaveValue('');
+  await expect(page.getByTestId('attachments')).toHaveCount(0);
+});

@@ -4,6 +4,7 @@
 // (appkit-ui/device) opens a new session on every start.
 
 import { indexedDbStore, type CacheStore } from 'appkit-ui/cache';
+import { restoreDraft, type KeptDraft } from './capture';
 import { isAreaName, isTaskId, MAX_NEXT, statusCounts } from './parse';
 import type { QueueStore } from './queue';
 import type { AreaInfo, NextPick, Status, TaskBrief, VaultView } from './types';
@@ -110,6 +111,21 @@ export function queueStore(factory: IDBFactory | undefined): QueueStore {
   return {
     load: () => store.load(),
     save: (items) => store.save(items),
+    clear: () => store.clear(),
+  };
+}
+
+/** The draft of the capture form in IndexedDB (its files in their own store, see `attach.ts`); checked when read. */
+export function draftStore(factory: IDBFactory | undefined): CacheStore<KeptDraft> {
+  const store = indexedDbStore<KeptDraft>(factory, {
+    db: `${DB}-draft`,
+    store: 'draft',
+    key: 'form',
+    valid: (v): v is KeptDraft => restoreDraft(v) !== null,
+  });
+  return {
+    load: async () => restoreDraft(await store.load()),
+    save: (value) => store.save(value),
     clear: () => store.clear(),
   };
 }

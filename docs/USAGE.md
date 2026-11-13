@@ -76,6 +76,9 @@ Attachments of a new task wait with it and are sent after it, to the task the en
 arrive (refused, or its answer lost) stays under **Waiting** on its own as "attachment ..."; the task is there
 already. The phone keeps a file only until the PC took it, and deletes every file when it is disconnected.
 
+What you type under **New** (and the photos and voice notes there) stays when you look at another view, and also when
+Android ends the app in the background: it is back on the next start, until you create the task or **Discard** it.
+
 The microphone is asked for only when you press **Voice note**, and a recording stops when the app goes to the
 background or after five minutes.
 

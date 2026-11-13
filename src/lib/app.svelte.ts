@@ -2,7 +2,7 @@
 // clock, the ids) comes in through `AppDeps`, so the tests run it without a browser (MTST-03).
 
 import { assetName, checkAttachment, type AttachmentProblem, type AttachmentRef, type FileStore, type NewAttachment } from './attach';
-import { checkDraft, emptyForm, type CaptureForm, type Draft, type DraftProblem } from './capture';
+import { checkDraft, emptyForm, formHolds, restoreDraft, type CaptureForm, type Draft, type DraftProblem, type KeptDraft } from './capture';
 import { ShapeError } from './parse';
 import { PUSH_KINDS, type PushAccess, type PushState } from './push';
 import { filesOf, WriteQueue, type Pending, type QueueStore } from './queue';
@@ -30,6 +30,10 @@ export interface AppDeps {
   queueStore: QueueStore;
   /** Where the files of a capture wait until they are sent (memory when not given). */
   fileStore?: FileStore;
+  /** The draft of the capture form, kept across an end of the app (none: kept in memory only). */
+  draftStore?: CacheStore<KeptDraft>;
+  /** The files of the draft (apart from the queue's, whose start collects files no write names). */
+  draftFiles?: FileStore;
   now(): Date;
   newId(): string;
   /** Timers for the next try while offline; without them (the tests that do not ask for it) no try is planned. */
@@ -173,6 +177,7 @@ export class App {
    * the code taken out of the address (`takePairingCode`), if the page was opened with one.
    */
   async start(pairingCode: string | null): Promise<void> {
+    await this.restoreForm();
     let kept = await this.deps.viewStore.load();
     if (kept && !isFresh(kept, this.deps.now())) {
       // Too old to stand for the vault: gone, not shown (MOB-08, MSEC-12).
@@ -341,6 +346,8 @@ export class App {
   /** The page went to the background: no tries until it is back (then `refresh` plans again). */
   pause(): void {
     this.stopRetry();
+    // The app may be ended in the background: what is in the form is kept now.
+    void this.keepForm();
   }
 
   /** A new session for the device after the hub refused the old one (it restarted); false: pair again. */
@@ -614,20 +621,99 @@ export class App {
    * the context then).
    */
   takeShare(shared: Shared): void {
+    this.shared = shared;
+    this.applyShare(shared);
+    this.screen = 'capture';
+  }
+
+  /** A share of this start (laid over a draft read back later, so the share is not lost under it). */
+  private shared: Shared | null = null;
+
+  private applyShare(shared: Shared): void {
     const form = this.form;
     const lines = (...parts: string[]) => parts.map((p) => p.trim()).filter((p) => p !== '').join('\n');
     if (form.title.trim() === '') form.title = shared.title;
     else form.context = lines(form.context, shared.title);
     form.context = lines(form.context, shared.context);
     form.fromShare = true;
-    this.screen = 'capture';
   }
 
-  /** Empty the form, the previews of its files given back. */
+  /** Empty the form, the previews of its files given back, and the kept draft with it. */
   discardForm(): void {
     for (const file of this.form.files) if (typeof URL.revokeObjectURL === 'function') URL.revokeObjectURL(file.url);
     this.form = emptyForm();
     this.fileProblem = null;
+    // In the same line as the keeps: a keep on its way is not written after the draft was taken away.
+    this.keeping = this.keeping.then(() => this.forgetKeptForm()).catch(() => {});
+  }
+
+  private async forgetKeptForm(): Promise<void> {
+    await this.deps.draftStore?.clear();
+    await this.deps.draftFiles?.clear();
+  }
+
+  private keeping: Promise<void> = Promise.resolve();
+
+  /** Settles when every keep and forget asked for so far is done (tests, and before the page is torn down). */
+  get kept(): Promise<void> {
+    return this.keeping;
+  }
+
+  /**
+   * Keep the form so that it outlives an end of the app (Android ends a page in the background): its text and its
+   * files. One keep after the other; an empty form keeps nothing.
+   */
+  keepForm(): Promise<void> {
+    this.keeping = this.keeping.then(() => this.keepFormNow()).catch(() => {});
+    return this.keeping;
+  }
+
+  private async keepFormNow(): Promise<void> {
+    const store = this.deps.draftStore;
+    const files = this.deps.draftFiles;
+    if (!store || !files) return;
+    const form = this.form;
+    if (!formHolds(form)) {
+      await store.clear();
+      await files.clear();
+      return;
+    }
+    for (const file of form.files) {
+      if (file.key) continue;
+      const key = this.deps.newId();
+      await files.put(key, file.blob);
+      file.key = key;
+    }
+    const named = new Set(form.files.map((f) => f.key));
+    for (const key of await files.keys()) if (!named.has(key)) await files.delete(key);
+    await store.save({
+      area: form.area,
+      title: form.title,
+      context: form.context,
+      fromShare: form.fromShare,
+      files: form.files.flatMap((f) => (f.key ? [{ key: f.key, kind: f.kind }] : [])),
+    });
+  }
+
+  /** The draft kept at the last end of the app, back in the form (a share of this start laid over it). */
+  private async restoreForm(): Promise<void> {
+    const store = this.deps.draftStore;
+    const files = this.deps.draftFiles;
+    if (!store || !files) return;
+    let kept: KeptDraft | null = null;
+    try {
+      kept = restoreDraft(await store.load());
+    } catch {
+      kept = null;
+    }
+    if (!kept) return;
+    const picked: CaptureForm['files'] = [];
+    for (const [i, f] of kept.files.entries()) {
+      const blob = await files.get(f.key).catch(() => null);
+      if (blob) picked.push({ id: i + 1, blob, kind: f.kind, url: URL.createObjectURL(blob), key: f.key });
+    }
+    this.form = { area: kept.area, title: kept.title, context: kept.context, fromShare: kept.fromShare, files: picked };
+    if (this.shared) this.applyShare(this.shared);
   }
 
   /** What the browser says about notices of this page (no question asked). */
