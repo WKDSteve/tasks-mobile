@@ -1002,6 +1002,7 @@ describe('an export file (the third way, read only)', () => {
       [new Blob(['not json']), 'file.bad'],
       [exportFile({ kind: 'tasks.snapshot' }), 'file.bad'],
       [exportFile({ exported_at: '2025-11-01T00:00:00Z' }), 'file.old'],
+      [exportFile({ exported_at: '2026-01-01T01:00:00Z' }), 'file.future'],
     ];
     for (const [file, key] of cases) {
       expect(await app.openExport(file), key).toBe(false);

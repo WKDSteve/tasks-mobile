@@ -653,7 +653,9 @@ export class App {
     }
     const kept: KeptView = { view: taken.view, at: taken.exportedAt, from: 'file' };
     if (!isFresh(kept, this.deps.now())) {
-      this.notice = { key: 'file.old', tone: 'error' };
+      // Written later than the phone's now (more than the few minutes `isFresh` allows): the clock of one of them is off.
+      const ahead = Date.parse(taken.exportedAt) > this.deps.now().getTime();
+      this.notice = { key: ahead ? 'file.future' : 'file.old', tone: 'error' };
       return false;
     }
     this.view = taken.view;
