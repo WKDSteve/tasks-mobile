@@ -29,7 +29,9 @@
     <h2 class="untrusted" data-testid="task-title">{markHidden(task.title)}</h2>
     <p class="muted">{task.area}{#if task.status} · {t(`status.${task.status}` as TextKey)}{/if}</p>
 
-    {#if task.status !== 'done'}
+    {#if task.status !== 'done' && !app.may('change')}
+      <p class="muted" data-testid="no-change">{t('rights.change_none', { level: app.level ?? '' })}</p>
+    {:else if task.status !== 'done'}
       <div class="status">
         <label for="task-status">{t('task.status')}</label>
         <select id="task-status" bind:value={chosen}>
@@ -66,6 +68,9 @@
     {#if app.detail}
       {#if app.detail.questions.length > 0}
         <h3>{t('task.questions')}</h3>
+        {#if !app.may('create')}
+          <p class="muted" data-testid="no-answer">{t('rights.answer_none', { level: app.level ?? '' })}</p>
+        {/if}
         {#each app.detail.questions as q (q.n)}
           <fieldset>
             <legend class="untrusted">{markHidden(q.title)}{#if q.answered} · <span class="ok">{t('task.answered')}</span>{/if}</legend>
@@ -73,7 +78,7 @@
               <button
                 class="option"
                 class:chosen={o.chosen}
-                disabled={app.busy || q.key === null || o.chosen}
+                disabled={app.busy || q.key === null || o.chosen || !app.may('create')}
                 onclick={() => q.key !== null && void app.answer(task, q.key, o.n)}
               >
                 <span class="untrusted">{markHidden(o.text)}</span>{#if o.recommended} <span class="muted">({t('task.recommended')})</span>{/if}

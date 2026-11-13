@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { allows, DEFAULT_RIGHTS, rightFor, type Right } from './rights';
+import { allows, DEFAULT_RIGHTS, rightFor, rightsOf, type Right } from './rights';
 
 describe('rights', () => {
   it('needs create for a new task and an answer, change for a status and finishing', () => {
@@ -18,5 +18,12 @@ describe('rights', () => {
     expect(allows(readCreate, { op: 'set', id: 'a/b', patch: { status: 'doing' } })).toBe(false);
     expect(allows(readCreate, { op: 'new', area: 'a', title: 't' })).toBe(true);
     expect(allows(new Set<Right>(['create']), { op: 'new', area: 'a', title: 't' })).toBe(false);
+  });
+
+  it('a level holds every level below it', () => {
+    expect([...rightsOf('read')]).toEqual(['read']);
+    expect([...rightsOf('create')]).toEqual(['read', 'create']);
+    expect([...rightsOf('change')]).toEqual(['read', 'create', 'change']);
+    expect([...rightsOf('trigger')]).toEqual(['read', 'create', 'change', 'trigger']);
   });
 });

@@ -1,7 +1,7 @@
 // The levels of what a phone may do (MOB-03): read, create (a task, an answer to a question), change (a status,
 // finishing) and trigger (a run of something; never offered by this page). The hub is where they are enforced, per
-// device; until it knows devices (appkit, "Mobile Geräte-Pairing und Rechte-Stufen"), this list only decides what the
-// page offers. It is not a protection: a session of the hub can do whatever the hub allows.
+// device and tells the page the level it has now (`/api/tasks/device`); the page then offers only that. It is not a
+// protection: the hub judges every request at the level the device has at that moment.
 
 import type { Op } from './types';
 
@@ -20,6 +20,14 @@ export function rightFor(op: Op): Right {
     case 'done':
       return 'change';
   }
+}
+
+/** The levels in their order: each holds the ones before it. */
+export const LEVELS: readonly Right[] = ['read', 'create', 'change', 'trigger'];
+
+/** What a device at `level` may do: that level and every one below it. */
+export function rightsOf(level: Right): ReadonlySet<Right> {
+  return new Set(LEVELS.slice(0, LEVELS.indexOf(level) + 1));
 }
 
 export function allows(rights: ReadonlySet<Right>, op: Op): boolean {

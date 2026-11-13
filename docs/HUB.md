@@ -18,7 +18,8 @@ Done in tasks-desktop (its `mobile.lock`, `tools/build-mobile.py`, `crates/tasks
 - `manifest.webmanifest` as `application/manifest+json`, `sw.js` as `text/javascript`. The worker's scope is `/m/`;
   it does not need `Service-Worker-Allowed`.
 - The routes the page uses: `GET /api/tasks/hello`, `/api/tasks/areas`, `/api/tasks/snapshot`, `/api/tasks/next`,
-  `/api/tasks/task`, `/api/tasks/done_preview`; `POST /api/tasks/ops` (one operation per request),
+  `/api/tasks/task`, `/api/tasks/done_preview`, `/api/tasks/device` (the level of this device now; a hub without it
+  leaves the page at read, create and change); `POST /api/tasks/ops` (one operation per request),
   `POST /api/tasks/upload?id=` (a file of a captured task, after the `new`; the body is the file, `X-Upload-Name` its
   name), `POST /auth/exchange`.
 

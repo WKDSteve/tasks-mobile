@@ -24,6 +24,7 @@ function source(answers: ((op: QueueOp) => OpOutcome | Error)[]): DataSource & {
     kind: 'fake',
     calls,
     hello: async () => ({ version: '', engineReady: true, engineProblem: null }),
+    level: async () => 'change' as const,
     vault: async () => ({ rev: 'r', tasks: [], areas: [], hiddenAreas: 0, counts: {}, next: [] }),
     task: async () => {
       throw new Error('unused');

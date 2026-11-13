@@ -54,6 +54,10 @@ This is needed **once**: the phone keeps a key of its own and signs in by itself
 PC or the hub restarted. Give the device a name in the field below the code; the PC lists devices by it. When the PC
 revokes the device, the app shows the pairing screen again.
 
+What the device may do is set on the PC (`tasks-hub devices level <id> read|create|change`; a new phone is at
+`change`). The app asks for it at each load and offers only that: at `read` no status, no finishing and no new task,
+at `create` new tasks and answers but no photos or voice notes; it says why where a button is missing.
+
 ## 3. Install
 
 In Chrome on Android: menu > **Install app** (or **Add to home screen**). The app then appears among the targets when

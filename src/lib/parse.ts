@@ -18,6 +18,7 @@ import type {
   VaultView,
 } from './types';
 import { STATUSES } from './types';
+import { LEVELS, type Right } from './rights';
 
 /** The hub sent something this page cannot read. */
 export class ShapeError extends Error {
@@ -341,6 +342,14 @@ export function donePreview(doc: unknown): DonePreview {
     freed,
     nextDue: next,
   };
+}
+
+/** `/api/tasks/device`: the level this device has now; anything else is no level (the page keeps what it had). */
+export function deviceLevel(doc: unknown): Right {
+  if (!isObj(doc) || doc['kind'] !== 'tasks.device') throw new ShapeError('device');
+  const level = doc['level'];
+  if (typeof level !== 'string' || !(LEVELS as readonly string[]).includes(level)) throw new ShapeError('device level');
+  return level as Right;
 }
 
 /** `hello` of the hub. */

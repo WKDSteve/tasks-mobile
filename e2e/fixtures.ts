@@ -29,12 +29,12 @@ export async function open(page: Page, path = '/', screen: 'list' | 'start' = 'l
 /** Control the synthetic hub of the page (only in the fake build). */
 export async function fakeHub(
   page: Page,
-  change: { offline?: boolean; loseNextAnswer?: boolean; loseNextUploadAnswer?: boolean; touch?: string; holdTasks?: boolean; releaseTasks?: boolean },
+  change: { offline?: boolean; loseNextAnswer?: boolean; loseNextUploadAnswer?: boolean; touch?: string; holdTasks?: boolean; releaseTasks?: boolean; deviceLevel?: string | null },
 ): Promise<void> {
   await page.evaluate((c) => {
     const hub = (
       window as unknown as {
-        __fakeHub: { offline: boolean; loseNextAnswer: boolean; loseNextUploadAnswer: boolean; holdTasks: boolean; touch(id: string): void; releaseTasks(): void };
+        __fakeHub: { offline: boolean; loseNextAnswer: boolean; loseNextUploadAnswer: boolean; holdTasks: boolean; deviceLevel: string | null; touch(id: string): void; releaseTasks(): void };
       }
     ).__fakeHub;
     if (c.offline !== undefined) hub.offline = c.offline;
@@ -43,5 +43,6 @@ export async function fakeHub(
     if (c.touch !== undefined) hub.touch(c.touch);
     if (c.holdTasks !== undefined) hub.holdTasks = c.holdTasks;
     if (c.releaseTasks) hub.releaseTasks();
+    if (c.deviceLevel !== undefined) hub.deviceLevel = c.deviceLevel;
   }, change);
 }

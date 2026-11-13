@@ -56,6 +56,7 @@ function sourceFor(fake: FakeSource, dead: Set<string | null>): (token: string |
     return {
       kind: 'hub',
       hello: () => gate(() => fake.hello()),
+      level: () => gate(() => fake.level()),
       vault: () => gate(() => fake.vault()),
       task: (id) => gate(() => fake.task(id)),
       write: (id, op) => gate(() => fake.write(id, op)),
@@ -1021,5 +1022,40 @@ describe('an export file (the third way, read only)', () => {
     await app.refresh();
     expect(app.fromFile).toBe(false);
     expect(app.view?.tasks.length).toBeGreaterThan(1);
+  });
+});
+
+describe('the level of this device', () => {
+  it('is read on every load and offers only what it allows', async () => {
+    const fake = new FakeSource();
+    const app = new App(deps(fake));
+    await app.start(null);
+    expect(app.level).toBe('change');
+    expect(app.may('change')).toBe(true);
+    fake.deviceLevel = 'create';
+    await app.refresh();
+    expect(app.level).toBe('create');
+    expect(app.may('change')).toBe(false);
+    expect(app.may('create')).toBe(true);
+    // A status is not even queued; a new task with a file neither (the file is an upload, `change`).
+    await app.setStatus(app.view!.tasks[0]!, 'doing');
+    expect(app.notice?.key).toBe('task.not_allowed');
+    const photo = { blob: new Blob(['x'], { type: 'image/png' }), kind: 'photo' as const };
+    expect(await app.capture({ area: 'garden', title: 'With a photo', context: '' }, [photo])).toBe(false);
+    expect(app.pending).toHaveLength(0);
+    expect(fake.writes).toHaveLength(0);
+    // Without the file the task is made.
+    expect(await app.capture({ area: 'garden', title: 'Without', context: '' })).toBe(true);
+    expect(fake.writes).toHaveLength(1);
+  });
+
+  it('keeps what it had with a hub that does not tell the level', async () => {
+    const fake = new FakeSource();
+    fake.deviceLevel = null;
+    const app = new App(deps(fake));
+    await app.start(null);
+    expect(app.connection).toBe('live');
+    expect(app.level).toBeNull();
+    expect(app.may('change')).toBe(true);
   });
 });

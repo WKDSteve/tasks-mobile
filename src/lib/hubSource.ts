@@ -2,8 +2,9 @@
 // the kit's `HubClient`; this file maps the routes and turns every failure into one of the errors of `source.ts`.
 
 import { HubClient } from 'appkit-ui/client';
-import { areaClasses, donePreview, hubHello, OP_ERROR_CODES, opOutcome, taskDetail, vaultView } from './parse';
+import { areaClasses, deviceLevel, donePreview, hubHello, OP_ERROR_CODES, opOutcome, taskDetail, vaultView } from './parse';
 import { pushKey, type PushSubscriptionBody } from './push';
+import type { Right } from './rights';
 import { AnswerLost, HubRefused, Unpaired, Unreachable, type DataSource } from './source';
 import type { DataClass, DonePreview, HubHello, Op, OpErrorCode, OpOutcome, TaskDetail, VaultView } from './types';
 
@@ -81,6 +82,10 @@ export class HubSource implements DataSource {
 
   async hello(): Promise<HubHello> {
     return hubHello(await this.read('/api/tasks/hello'));
+  }
+
+  async level(): Promise<Right> {
+    return deviceLevel(await this.read('/api/tasks/device'));
   }
 
   async vault(): Promise<VaultView> {

@@ -6,9 +6,10 @@
 //
 // The names are neutral (APP-01): nothing here is a real area or a real task.
 
-import { areaClasses, donePreview, hubHello, opOutcome, taskDetail, vaultView } from './parse';
+import { areaClasses, deviceLevel, donePreview, hubHello, opOutcome, taskDetail, vaultView } from './parse';
 import { AnswerLost, HubRefused, Unreachable, type DataSource } from './source';
 import type { PushSubscriptionBody } from './push';
+import type { Right } from './rights';
 import type { DataClass, DonePreview, HubHello, Op, OpOutcome, TaskDetail, VaultView } from './types';
 
 interface FakeTask {
@@ -42,6 +43,8 @@ export interface FakeControls {
   refuseNextUpload: boolean;
   /** The next upload is attached but its answer is lost. */
   loseNextUploadAnswer: boolean;
+  /** The level the PC gave this device (`tasks-hub devices level`); `null`: a hub that does not tell it. */
+  deviceLevel: Right | null;
 }
 
 const HEAD = {
@@ -147,6 +150,7 @@ function slugOf(title: string): string {
 export class FakeSource implements DataSource, FakeControls {
   readonly kind = 'fake' as const;
   offline = false;
+  deviceLevel: Right | null = 'change';
   loseNextAnswer = false;
   holdTasks = false;
   private held: (() => void)[] = [];
@@ -222,6 +226,12 @@ export class FakeSource implements DataSource, FakeControls {
   async hello(): Promise<HubHello> {
     this.reachable();
     return hubHello({ ...HEAD, kind: 'tasks.hello', version: 'fake', engine: { ready: true, problem: null } });
+  }
+
+  async level(): Promise<Right> {
+    this.reachable();
+    if (this.deviceLevel === null) throw new HubRefused(403, 'not_for_devices', 'this route is not released for devices');
+    return deviceLevel({ ...HEAD, kind: 'tasks.device', level: this.deviceLevel });
   }
 
   async vault(): Promise<VaultView> {

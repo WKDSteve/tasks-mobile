@@ -6,7 +6,7 @@ import { checkDraft, emptyForm, formHolds, restoreDraft, type CaptureForm, type 
 import { ExportClassError, MAX_EXPORT_BYTES, phoneExport, ShapeError } from './parse';
 import { PUSH_KINDS, type PushAccess, type PushState } from './push';
 import { filesOf, WriteQueue, type Pending, type QueueStore } from './queue';
-import { allows, DEFAULT_RIGHTS, type Right } from './rights';
+import { allows, DEFAULT_RIGHTS, rightsOf, type Right } from './rights';
 import { HubRefused, Unpaired, Unreachable, type DataSource } from './source';
 import type { KeptView } from './storage';
 import { isFresh } from './storage';
@@ -113,7 +113,10 @@ export class App {
   pushState = $state<PushState>('unsupported');
   /** The capture form as it was left, until it is created or discarded (see `CaptureForm`). */
   form = $state<CaptureForm>(emptyForm());
-  rights: ReadonlySet<Right> = DEFAULT_RIGHTS;
+  /** What this device may do, as the hub told it at the last load (`/api/tasks/device`); the page offers only that. */
+  rights = $state<ReadonlySet<Right>>(DEFAULT_RIGHTS);
+  /** The level the hub told, `null` before it told one (or a hub that does not tell it). */
+  level = $state<Right | null>(null);
   /** Counts the writes of the task page the PC refused as a conflict: the page sets its choices back to the new state. */
   conflicts = $state(0);
   busy = $state(false);
@@ -376,6 +379,7 @@ export class App {
     try {
       const hello = await source.hello();
       this.engineProblem = hello.engineReady ? null : (hello.engineProblem ?? '?');
+      await this.readLevel(source);
       const report = await this.queue.flush(source);
       if (report.stopped === 'unpaired') {
         if (retry && (await this.renew())) return this.load(false);
@@ -402,6 +406,25 @@ export class App {
     }
   }
 
+  /**
+   * The level of this device as the hub says it now (the PC may have changed it). A hub that does not tell it, or an
+   * answer that is no level, leaves what the page had: the hub judges every request anyway.
+   */
+  private async readLevel(source: DataSource): Promise<void> {
+    try {
+      const level = await source.level();
+      this.level = level;
+      this.rights = rightsOf(level);
+    } catch (error) {
+      if (!(error instanceof HubRefused) && !(error instanceof ShapeError)) throw error;
+    }
+  }
+
+  /** May this device do that now? */
+  may(right: Right): boolean {
+    return this.rights.has(right);
+  }
+
   /** The screen a task was opened from ("Today" or the list): "back" and a finish go there. */
   returnTo = $state<'today' | 'list'>('list');
 
@@ -425,7 +448,8 @@ export class App {
       this.notice = { key: 'file.read_only', tone: 'info' };
       return null;
     }
-    if (!allows(this.rights, op)) {
+    // A file of a new task is an upload, which changes the task: `change`.
+    if (!allows(this.rights, op) || (files.length > 0 && !this.may('change'))) {
       this.notice = { key: 'task.not_allowed', tone: 'error' };
       return null;
     }
@@ -628,6 +652,8 @@ export class App {
     this.view = null;
     this.viewAt = null;
     this.fromFile = false;
+    this.rights = DEFAULT_RIGHTS;
+    this.level = null;
     this.detail = null;
     this.opened = null;
     this.connection = 'offline';

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { areaClasses, dataClassOf, donePreview, ExportClassError, isTaskId, MAX_NEXT, nextPicks, opOutcome, phoneExport, ShapeError, statusCounts, taskBrief, taskDetail, vaultView } from './parse';
+import { areaClasses, dataClassOf, deviceLevel, donePreview, ExportClassError, isTaskId, MAX_NEXT, nextPicks, opOutcome, phoneExport, ShapeError, statusCounts, taskBrief, taskDetail, vaultView } from './parse';
 
 const classes = new Map([
   ['garden', 'public' as const],
@@ -214,5 +214,14 @@ describe('an export file of the hub (the third way, read only)', () => {
     expect(() => phoneExport(exportDoc({ exported_at: 'yesterday' }))).toThrow(ShapeError);
     expect(() => phoneExport(exportDoc({ snapshot: null }))).toThrow(ShapeError);
     expect(() => phoneExport(null)).toThrow(ShapeError);
+  });
+});
+
+describe('the level of the device', () => {
+  it('reads a level the hub names, and nothing else', () => {
+    expect(deviceLevel({ kind: 'tasks.device', schema: 1, level: 'create' })).toBe('create');
+    for (const doc of [{ kind: 'tasks.device', level: 'admin' }, { kind: 'tasks.device' }, { kind: 'tasks.hello', level: 'read' }, null]) {
+      expect(() => deviceLevel(doc)).toThrow(ShapeError);
+    }
   });
 });

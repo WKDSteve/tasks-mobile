@@ -147,6 +147,9 @@
 {#if app.fromFile}
   <p class="muted" data-testid="file-read-only">{t('file.read_only')}</p>
 {/if}
+{#if !app.may('create')}
+  <p class="muted" data-testid="no-create">{t('rights.create_none', { level: app.level ?? '' })}</p>
+{:else}
 <form onsubmit={submit} oninput={typed} novalidate>
   {#if form.fromShare}
     <p class="muted" data-testid="from-share">{t('capture.shared')}</p>
@@ -167,6 +170,9 @@
   <label for="cap-context">{t('capture.context')}</label>
   <textarea id="cap-context" maxlength="4000" bind:value={form.context}></textarea>
 
+  {#if !app.may('change')}
+  <p class="muted" data-testid="no-files">{t('rights.files_none', { level: app.level ?? '' })}</p>
+  {:else}
   <div class="attach">
     <input
       bind:this={photoInput}
@@ -189,6 +195,7 @@
     {/if}
   </div>
   <p class="muted note">{t('capture.files_limit', { n: MAX_FILES, size: sizeText(MAX_FILE_BYTES) })}</p>
+  {/if}
 
   {#if micProblem}
     <p class="bad" role="alert" data-testid="mic-problem">{t('capture.mic_failed', { message: micProblem })}</p>
@@ -230,6 +237,7 @@
     {/if}
   </p>
 </form>
+{/if}
 
 <style>
   .actions {

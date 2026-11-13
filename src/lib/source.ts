@@ -3,6 +3,7 @@
 // No implementation computes a rule of the tasks: the engine behind the hub does (MOB-05).
 
 import type { PushSubscriptionBody } from './push';
+import type { Right } from './rights';
 import type { DonePreview, HubHello, Op, OpOutcome, TaskDetail, VaultView } from './types';
 
 /** The hub could not be reached at all (no tunnel, no network): the page is offline, the write waits. */
@@ -48,6 +49,8 @@ export interface DataSource {
   /** `hub` or `fake`: the page names it, so a test page is never mistaken for the real vault. */
   readonly kind: 'hub' | 'fake';
   hello(): Promise<HubHello>;
+  /** The level this device has now (`HubRefused` from a hub that does not tell it). */
+  level(): Promise<Right>;
   /** The vault, cut to the areas this phone may show. */
   vault(): Promise<VaultView>;
   task(id: string): Promise<TaskDetail>;
