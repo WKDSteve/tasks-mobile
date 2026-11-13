@@ -946,3 +946,79 @@ describe('a refusal without words', () => {
     expect(app.notice).toMatchObject({ key: 'error.refused', params: { message: '', code: 'not_found' } });
   });
 });
+
+describe('an export file (the third way, read only)', () => {
+  function exportFile(over: Record<string, unknown> = {}): Blob {
+    const doc = {
+      kind: 'tasks.phone_export',
+      schema: 1,
+      classes_asked: true,
+      exported_at: '2025-12-30T10:00:00Z',
+      areas: [{ name: 'garden', data_class: 'public' }],
+      snapshot: { kind: 'tasks.snapshot', rev: 'sha256:1', areas: [{ name: 'garden' }], tasks: [{ id: 'garden/a', area: 'garden', title: 'A', status: 'open' }] },
+      next: { kind: 'tasks.next', task: { id: 'garden/a', title: 'A' } },
+      ...over,
+    };
+    return new Blob([JSON.stringify(doc)], { type: 'application/json' });
+  }
+
+  it('shows the file on an unpaired phone with its time, keeps it, and refuses to create or change', async () => {
+    const d = deps(new FakeSource(), { fake: false, device: fakeDevice() });
+    const app = new App(d);
+    await app.start(null);
+    expect(app.screen).toBe('pair');
+    expect(await app.openExport(exportFile())).toBe(true);
+    expect(app.screen).toBe('today');
+    expect(app.fromFile).toBe(true);
+    expect(app.viewAt).toBe('2025-12-30T10:00:00.000Z');
+    expect(app.view?.tasks.map((t) => t.id)).toEqual(['garden/a']);
+    expect(d.views.value?.from).toBe('file');
+    expect(await app.capture({ area: 'garden', title: 'New', context: '' })).toBe(false);
+    expect(app.notice?.key).toBe('file.read_only');
+    expect(app.pending).toHaveLength(0);
+    app.notice = null;
+    await app.askFinish(app.view!.tasks[0]!);
+    expect((app.notice as { key: string } | null)?.key).toBe('file.read_only');
+    expect(app.preview).toBeNull();
+  });
+
+  it('starts again on the kept file, not on the pairing screen', async () => {
+    const d = deps(new FakeSource(), { fake: false, device: fakeDevice() });
+    await new App(d).openExport(exportFile());
+    const again = new App({ ...d, device: fakeDevice() });
+    await again.start(null);
+    expect(again.screen).toBe('today');
+    expect(again.fromFile).toBe(true);
+    expect(again.view?.tasks).toHaveLength(1);
+  });
+
+  it('refuses a file of another class, no export, a file too old, and keeps what was shown', async () => {
+    const d = deps(new FakeSource(), { fake: false, device: fakeDevice() });
+    const app = new App(d);
+    await app.start(null);
+    const cases: [Blob, string][] = [
+      [exportFile({ areas: [{ name: 'garden', data_class: 'private' }] }), 'file.classes'],
+      [exportFile({ classes_asked: false }), 'file.classes'],
+      [new Blob(['not json']), 'file.bad'],
+      [exportFile({ kind: 'tasks.snapshot' }), 'file.bad'],
+      [exportFile({ exported_at: '2025-11-01T00:00:00Z' }), 'file.old'],
+    ];
+    for (const [file, key] of cases) {
+      expect(await app.openExport(file), key).toBe(false);
+      expect(app.notice?.key).toBe(key);
+      expect(app.view).toBeNull();
+      expect(app.fromFile).toBe(false);
+      expect(d.views.value).toBeNull();
+    }
+  });
+
+  it('gives way to the hub: its next answer replaces the file', async () => {
+    const app = new App(deps(new FakeSource()));
+    await app.start(null);
+    expect(await app.openExport(exportFile())).toBe(true);
+    expect(app.fromFile).toBe(true);
+    await app.refresh();
+    expect(app.fromFile).toBe(false);
+    expect(app.view?.tasks.length).toBeGreaterThan(1);
+  });
+});

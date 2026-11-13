@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { areaClasses, dataClassOf, donePreview, isTaskId, MAX_NEXT, nextPicks, opOutcome, ShapeError, statusCounts, taskBrief, taskDetail, vaultView } from './parse';
+import { areaClasses, dataClassOf, donePreview, ExportClassError, isTaskId, MAX_NEXT, nextPicks, opOutcome, phoneExport, ShapeError, statusCounts, taskBrief, taskDetail, vaultView } from './parse';
 
 const classes = new Map([
   ['garden', 'public' as const],
@@ -144,5 +144,75 @@ describe('the today view: counts and picks of the engine (MOB-05), only of shown
   it('refuses a next document of another kind (MOB-09)', () => {
     expect(() => nextPicks({ kind: 'tasks.error' }, new Set())).toThrow(ShapeError);
     expect(() => vaultView(doc, classes, null)).toThrow(ShapeError);
+  });
+});
+
+describe('an export file of the hub (the third way, read only)', () => {
+  function exportDoc(over: Record<string, unknown> = {}): Record<string, unknown> {
+    return {
+      kind: 'tasks.phone_export',
+      schema: 1,
+      classes_asked: true,
+      exported_at: '2026-11-13T10:00:00Z',
+      areas: [
+        { name: 'garden', data_class: 'public' },
+        { name: 'kitchen', data_class: 'internal' },
+      ],
+      snapshot: {
+        kind: 'tasks.snapshot',
+        rev: 'sha256:1',
+        areas: [
+          { name: 'garden', by_status: { open: 1 } },
+          { name: 'kitchen', by_status: { doing: 1 } },
+        ],
+        tasks: [
+          { id: 'garden/a', area: 'garden', title: 'A', status: 'open' },
+          { id: 'kitchen/b', area: 'kitchen', title: 'B', status: 'doing' },
+        ],
+      },
+      next: { kind: 'tasks.next', task: { id: 'kitchen/b', title: 'B' }, alternatives: [{ id: 'garden/a', title: 'A' }] },
+      ...over,
+    };
+  }
+
+  it('reads the tasks, the picks and the time of the file', () => {
+    const taken = phoneExport(exportDoc());
+    expect(taken.exportedAt).toBe('2026-11-13T10:00:00.000Z');
+    expect(taken.view.tasks.map((t) => t.id)).toEqual(['garden/a', 'kitchen/b']);
+    expect(taken.view.areas).toEqual([
+      { name: 'garden', dataClass: 'public' },
+      { name: 'kitchen', dataClass: 'internal' },
+    ]);
+    expect(taken.view.next.map((p) => p.id)).toEqual(['kitchen/b', 'garden/a']);
+    expect(taken.view.hiddenAreas).toBe(0);
+  });
+
+  it('refuses a file that does not say the hub cut it by the classes', () => {
+    expect(() => phoneExport(exportDoc({ classes_asked: undefined }))).toThrow(ExportClassError);
+    expect(() => phoneExport(exportDoc({ classes_asked: 'yes' }))).toThrow(ExportClassError);
+  });
+
+  it('refuses the whole file for one area of another class, or one of no known class (fail closed)', () => {
+    for (const dataClass of ['private', 'unclassified', 'secret', undefined]) {
+      const areas = [{ name: 'garden', data_class: 'public' }, { name: 'vault', data_class: dataClass }];
+      expect(() => phoneExport(exportDoc({ areas }))).toThrow(ExportClassError);
+    }
+  });
+
+  it('refuses a snapshot that holds an area or a task the class list does not name', () => {
+    const base = exportDoc();
+    const snap = base['snapshot'] as Record<string, unknown[]>;
+    const withArea = { ...snap, areas: [...snap['areas']!, { name: 'secret' }] };
+    expect(() => phoneExport(exportDoc({ snapshot: withArea }))).toThrow(ExportClassError);
+    const withTask = { ...snap, tasks: [...snap['tasks']!, { id: 'secret/x', area: 'secret', title: 'X' }] };
+    expect(() => phoneExport(exportDoc({ snapshot: withTask }))).toThrow(ExportClassError);
+  });
+
+  it('refuses another kind, schema or time as no export at all', () => {
+    expect(() => phoneExport(exportDoc({ kind: 'tasks.snapshot' }))).toThrow(ShapeError);
+    expect(() => phoneExport(exportDoc({ schema: 2 }))).toThrow(ShapeError);
+    expect(() => phoneExport(exportDoc({ exported_at: 'yesterday' }))).toThrow(ShapeError);
+    expect(() => phoneExport(exportDoc({ snapshot: null }))).toThrow(ShapeError);
+    expect(() => phoneExport(null)).toThrow(ShapeError);
   });
 });

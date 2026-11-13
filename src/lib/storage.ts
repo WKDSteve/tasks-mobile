@@ -16,6 +16,8 @@ export interface KeptView {
   view: VaultView;
   /** When the hub sent it (ISO time), shown as "as of". */
   at: string;
+  /** `file`: read from an export file (`tasks-hub phone export`), not from the hub; read only. */
+  from?: 'file';
 }
 
 function brief(value: unknown): TaskBrief | null {
@@ -59,7 +61,9 @@ export function restoreView(raw: unknown): KeptView | null {
     const pick = restorePick(p);
     return pick && shown.has(pick.area) ? [pick] : [];
   }).slice(0, MAX_NEXT);
-  return { at: r['at'], view: { rev: view['rev'].slice(0, 200), tasks, areas, hiddenAreas: hidden, counts, next } };
+  const kept: KeptView = { at: r['at'], view: { rev: view['rev'].slice(0, 200), tasks, areas, hiddenAreas: hidden, counts, next } };
+  if (r['from'] === 'file') kept.from = 'file';
+  return kept;
 }
 
 function restorePick(value: unknown): NextPick | null {

@@ -10,7 +10,9 @@
 </script>
 
 <div class="bar" data-testid="connection" data-state={app.connection}>
-  {#if app.connection === 'live'}
+  {#if app.fromFile && at}
+    <span class="muted" data-testid="from-file">▤ {t('conn.file', { at })}</span>
+  {:else if app.connection === 'live'}
     <span class="ok">● {t('conn.live')}</span>
   {:else if app.connection === 'checking'}
     <span class="muted">◌ {t('conn.checking')}</span>

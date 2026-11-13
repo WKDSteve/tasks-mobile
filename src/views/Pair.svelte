@@ -1,6 +1,7 @@
 <script lang="ts">
   import { DEFAULT_DEVICE_NAME, type App } from '../lib/app.svelte';
   import type { Translate } from '../lib/i18n';
+  import ExportPick from './ExportPick.svelte';
 
   let { app, t }: { app: App; t: Translate } = $props();
   let code = $state('');
@@ -31,4 +32,5 @@
     <input id="pair-name" type="text" maxlength="40" autocomplete="off" placeholder={DEFAULT_DEVICE_NAME} bind:value={name} />
     <p><button class="primary" type="submit" disabled={sending || code.trim() === ''}>{t('pair.go')}</button></p>
   </form>
+  <ExportPick {app} {t} />
 </section>

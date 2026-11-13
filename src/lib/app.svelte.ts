@@ -3,7 +3,7 @@
 
 import { assetName, checkAttachment, type AttachmentProblem, type AttachmentRef, type FileStore, type NewAttachment } from './attach';
 import { checkDraft, emptyForm, formHolds, restoreDraft, type CaptureForm, type Draft, type DraftProblem, type KeptDraft } from './capture';
-import { ShapeError } from './parse';
+import { ExportClassError, MAX_EXPORT_BYTES, phoneExport, ShapeError } from './parse';
 import { PUSH_KINDS, type PushAccess, type PushState } from './push';
 import { filesOf, WriteQueue, type Pending, type QueueStore } from './queue';
 import { allows, DEFAULT_RIGHTS, type Right } from './rights';
@@ -117,6 +117,11 @@ export class App {
   /** Counts the writes of the task page the PC refused as a conflict: the page sets its choices back to the new state. */
   conflicts = $state(0);
   busy = $state(false);
+  /**
+   * What is shown came from an export file (`tasks-hub phone export`), not from the hub: read only. Creating and
+   * changing need the hub; the page says so instead of queueing. The next answer of the hub takes its place.
+   */
+  fromFile = $state(false);
 
   readonly queue: WriteQueue;
   private token: string | null = null;
@@ -187,6 +192,7 @@ export class App {
     if (kept) {
       this.view = kept.view;
       this.viewAt = kept.at;
+      this.fromFile = kept.from === 'file';
     }
     await this.queue.load(kept ? new Set(kept.view.areas.map((a) => a.name)) : null);
     await this.readPush();
@@ -225,7 +231,8 @@ export class App {
     this.token = null;
     this.source = null;
     this.connection = 'offline';
-    this.screen = 'pair';
+    // A phone that reads an export file is not paired by intent: it stays on what the file shows.
+    if (!this.fromFile || result.kind === 'refused') this.screen = 'pair';
     this.notice = result.kind === 'refused' ? { key: 'pair.revoked', tone: 'error' } : null;
     return false;
   }
@@ -378,6 +385,7 @@ export class App {
       const view = await source.vault();
       this.view = view;
       this.viewAt = this.deps.now().toISOString();
+      this.fromFile = false;
       this.connection = 'live';
       // An error of the hub said before (`error.*`) is over once the hub answered in full. What a write came to (not
       // taken, a file that waits) stays until the person moves on: it is about the write, not about the hub.
@@ -413,6 +421,10 @@ export class App {
 
   /** Queue a write and try to send it now; the list changes only with the hub's answer (MOB-07). */
   private async enqueue(op: Op, area: string, label: string, files: NewAttachment[] = []): Promise<Pending | null> {
+    if (this.fromFile) {
+      this.notice = { key: 'file.read_only', tone: 'info' };
+      return null;
+    }
     if (!allows(this.rights, op)) {
       this.notice = { key: 'task.not_allowed', tone: 'error' };
       return null;
@@ -553,6 +565,10 @@ export class App {
 
   /** Ask the engine what finishing would do; only with a connection (the preview is the engine's). */
   async askFinish(task: TaskBrief): Promise<void> {
+    if (this.fromFile) {
+      this.notice = { key: 'file.read_only', tone: 'info' };
+      return;
+    }
     if (!this.source || this.connection !== 'live') {
       this.notice = { key: 'task.done_offline', tone: 'info' };
       return;
@@ -611,10 +627,44 @@ export class App {
     this.discardForm();
     this.view = null;
     this.viewAt = null;
+    this.fromFile = false;
     this.detail = null;
     this.opened = null;
     this.connection = 'offline';
     this.screen = this.deps.fake ? 'today' : 'pair';
+  }
+
+  /**
+   * Open an export file (`tasks-hub phone export`, the third way): checked as strictly as a document of the hub, and
+   * refused whole when it holds anything of another class (MOB-02). Shown read only, with the time of the file, and kept
+   * like a list of the hub (the same 14 days, MOB-08), until the hub answers. False when it was not taken.
+   */
+  async openExport(file: Blob): Promise<boolean> {
+    if (file.size > MAX_EXPORT_BYTES) {
+      this.notice = { key: 'file.too_big', tone: 'error' };
+      return false;
+    }
+    let taken;
+    try {
+      taken = phoneExport(JSON.parse(await file.text()));
+    } catch (error) {
+      this.notice = { key: error instanceof ExportClassError ? 'file.classes' : 'file.bad', tone: 'error' };
+      return false;
+    }
+    const kept: KeptView = { view: taken.view, at: taken.exportedAt, from: 'file' };
+    if (!isFresh(kept, this.deps.now())) {
+      this.notice = { key: 'file.old', tone: 'error' };
+      return false;
+    }
+    this.view = taken.view;
+    this.viewAt = taken.exportedAt;
+    this.fromFile = true;
+    this.detail = null;
+    this.opened = null;
+    this.screen = 'today';
+    this.notice = { key: 'file.opened', params: { n: taken.view.tasks.length }, tone: 'info' };
+    await this.deps.viewStore.save(kept);
+    return true;
   }
 
   /**

@@ -1,0 +1,28 @@
+{
+  "kind": "tasks.phone_export",
+  "schema": 1,
+  "classes_asked": true,
+  "exported_at": "2026-11-13T10:00:00Z",
+  "areas": [
+    { "name": "orchard", "data_class": "public" },
+    { "name": "workshop", "data_class": "internal" }
+  ],
+  "snapshot": {
+    "kind": "tasks.snapshot",
+    "schema": 1,
+    "rev": "sha256:00000000000000000000000000000000",
+    "areas": [
+      { "name": "orchard", "open": 1, "by_status": { "open": 1 } },
+      { "name": "workshop", "open": 1, "by_status": { "doing": 1 } }
+    ],
+    "tasks": [
+      { "id": "orchard/prune-the-apple-trees", "area": "orchard", "title": "Prune the apple trees", "status": "open", "prio": 2 },
+      { "id": "workshop/oil-the-saw", "area": "workshop", "title": "Oil the saw", "status": "doing", "prio": 1 }
+    ]
+  },
+  "next": {
+    "kind": "tasks.next",
+    "task": { "id": "workshop/oil-the-saw", "title": "Oil the saw", "status": "doing", "prio": 1 },
+    "alternatives": [{ "id": "orchard/prune-the-apple-trees", "title": "Prune the apple trees", "status": "open", "prio": 2 }]
+  }
+}

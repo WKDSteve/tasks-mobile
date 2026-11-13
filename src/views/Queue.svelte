@@ -5,6 +5,7 @@
   import type { App } from '../lib/app.svelte';
   import { reason, type Translate, type TextKey } from '../lib/i18n';
   import type { Pending } from '../lib/queue';
+  import ExportPick from './ExportPick.svelte';
 
   let { app, t }: { app: App; t: Translate } = $props();
   let forgetting = $state(false);
@@ -66,6 +67,11 @@
     {/each}
   </ul>
 {/if}
+
+{#if app.fromFile && !app.paired}
+  <p><button class="primary" onclick={() => (app.screen = 'pair')} data-testid="file-pair">{t('file.pair')}</button></p>
+{/if}
+<ExportPick {app} {t} />
 
 <section class="push" data-testid="push">
   <h2>{t('push.title')}</h2>

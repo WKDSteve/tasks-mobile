@@ -144,6 +144,9 @@
   }
 </script>
 
+{#if app.fromFile}
+  <p class="muted" data-testid="file-read-only">{t('file.read_only')}</p>
+{/if}
 <form onsubmit={submit} oninput={typed} novalidate>
   {#if form.fromShare}
     <p class="muted" data-testid="from-share">{t('capture.shared')}</p>

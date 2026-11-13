@@ -155,6 +155,69 @@ export function vaultView(doc: unknown, classes: Map<string, DataClass>, nextDoc
   return { rev, tasks, areas, hiddenAreas, counts, next };
 }
 
+/** The kind of the file `tasks-hub phone export` writes: the vault as a paired phone is given it, read only. */
+export const PHONE_EXPORT_KIND = 'tasks.phone_export';
+
+/** The largest export file the page reads (a vault of some thousand tasks is well below). */
+export const MAX_EXPORT_BYTES = 8 * 1024 * 1024;
+
+/**
+ * An export file that holds an area of another class than `public` or `internal`, or one it does not name with its
+ * class, or that does not say the hub cut it by the classes: the whole file is refused (fail closed, MOB-02). Nothing of
+ * it is shown or kept.
+ */
+export class ExportClassError extends Error {
+  constructor(what: string) {
+    super(`export refused: ${what}`);
+    this.name = 'ExportClassError';
+  }
+}
+
+export interface PhoneExport {
+  view: VaultView;
+  /** When the hub wrote the file (ISO time): the "as of" of what it shows. */
+  exportedAt: string;
+}
+
+/**
+ * A `tasks.phone_export` (the third way to the vault, a file): the snapshot and the picks of `next` the hub cut for a
+ * phone, with the class of every area it holds. Checked like a document of the hub (MSEC-13), and stricter: an area
+ * that is not `public`/`internal`, or a task or area of the snapshot the class list does not name, refuses the whole
+ * file instead of being hidden, since a file that holds it was not cut for a phone.
+ */
+export function phoneExport(doc: unknown): PhoneExport {
+  if (!isObj(doc) || doc['kind'] !== PHONE_EXPORT_KIND || doc['schema'] !== 1) throw new ShapeError('export');
+  if (doc['classes_asked'] !== true) throw new ExportClassError('classes not asked');
+  const at = str(doc['exported_at'], 40);
+  if (at === null || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/.test(at) || Number.isNaN(Date.parse(at))) {
+    throw new ShapeError('export time');
+  }
+  if (!Array.isArray(doc['areas'])) throw new ShapeError('export areas');
+  const classes = new Map<string, DataClass>();
+  for (const entry of doc['areas']) {
+    if (!isObj(entry) || !isAreaName(entry['name'])) throw new ExportClassError('an area without a name');
+    const dataClass = dataClassOf(entry['data_class']);
+    if (!shownClass(dataClass)) throw new ExportClassError(`area ${entry['name']} is ${dataClass}`);
+    classes.set(entry['name'], dataClass);
+  }
+  const snapshot = doc['snapshot'];
+  if (!isObj(snapshot) || !Array.isArray(snapshot['areas']) || !Array.isArray(snapshot['tasks'])) {
+    throw new ShapeError('export snapshot');
+  }
+  for (const entry of snapshot['areas']) {
+    if (isObj(entry) && typeof entry['name'] === 'string' && !classes.has(entry['name'])) {
+      throw new ExportClassError('an area without a class');
+    }
+  }
+  for (const entry of snapshot['tasks']) {
+    if (isObj(entry) && typeof entry['area'] === 'string' && !classes.has(entry['area'])) {
+      throw new ExportClassError('a task of an area without a class');
+    }
+  }
+  const view = vaultView(snapshot, classes, doc['next']);
+  return { view, exportedAt: new Date(at).toISOString() };
+}
+
 /** `by_status` of one area: a count is a whole number of at least 0 under a status word; anything else is left out. */
 export function statusCounts(value: unknown): StatusCounts {
   const counts: StatusCounts = {};

@@ -31,6 +31,9 @@ What is there:
   hub is reached again. Nothing is shown as done before the engine said so; a change the file moved on from is a
   conflict you see, never an overwrite. The queue is the one of appkit (`appkit-ui/queue`); only the files of a new
   task, sent after the engine made it, are added here (`src/lib/queue.ts`).
+- **An export file** instead of a connection: `tasks-hub phone export <file>` on the PC writes the released areas to a
+  file; the page opens it read only, refuses it whole when it holds an area of another class than `public` or
+  `internal` (`phoneExport` in `src/lib/parse.ts`), and says that creating and changing need the PC.
 - **Notifications** (turned on under Waiting): a reminder that is due and a task that waits for your decision. The
   notification names only its kind, never the title or text of a task; tapping it opens the task, which loads over the
   paired way then. The browser asks for the permission only on the button. Needs a hub that sends Web Push

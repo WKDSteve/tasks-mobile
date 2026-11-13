@@ -51,3 +51,12 @@ describe('the kept view (MSEC-13)', () => {
     expect(restoreView({ at: 'x', view: { ...view, tasks: 'no' } })).toBeNull();
   });
 });
+
+describe('a kept view of an export file', () => {
+  it('keeps that it came from a file, and nothing else in its place', () => {
+    const view = { rev: 'r', tasks: [], areas: [], hiddenAreas: 0, counts: {}, next: [] };
+    expect(restoreView({ at: '2026-01-01T00:00:00Z', view, from: 'file' })?.from).toBe('file');
+    expect(restoreView({ at: '2026-01-01T00:00:00Z', view, from: 'hub' })?.from).toBeUndefined();
+    expect(restoreView({ at: '2026-01-01T00:00:00Z', view })?.from).toBeUndefined();
+  });
+});

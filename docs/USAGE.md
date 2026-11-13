@@ -95,7 +95,22 @@ the internet for them, not the tunnel; the task itself still loads over the tunn
 site: allow notifications in its site settings, then turn them on here. **Turn notifications off** stops them, and so
 does disconnecting.
 
-## 6. Disconnect
+## 6. Without a connection: an export file
+
+When neither a tunnel nor Tailscale is at hand, the PC can write what this phone would be given to a file:
+
+```
+tasks-hub phone export tasks-export.json
+```
+
+It holds the areas of the class `public` or `internal` only (a private area, or one without a class, is not in it at
+all), the tasks and what the engine would take next, and the time it was written. Copy the file to the phone (a synced
+folder, a cable, a cloned repository) and open it under **Waiting** (or on the pairing screen): **Open an export file**.
+The page refuses a file that holds anything of another class, or that is older than 14 days. It shows *Today* and the
+list with "From a file: as of ...", read only: creating, changing and finishing say that they need the PC. Once the
+phone is paired and reaches the hub, the hub's list takes the place of the file.
+
+## 7. Disconnect
 
 **Disconnect and delete the data** (at the bottom of **Waiting**, after a question) removes the device key, the kept list,
 what still waits, and the notifications.
