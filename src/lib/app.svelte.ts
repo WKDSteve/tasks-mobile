@@ -505,8 +505,15 @@ export class App {
     }
   }
 
-  /** Look at the run again (the button, and the timer while it runs). */
-  async refreshRun(): Promise<void> {
+  private runAsk: Promise<void> | null = null;
+
+  /** Look at the run again (the button, and the timer while it runs); a look under way is joined, not repeated. */
+  refreshRun(): Promise<void> {
+    this.runAsk ??= this.askRun().finally(() => (this.runAsk = null));
+    return this.runAsk;
+  }
+
+  private async askRun(): Promise<void> {
     const source = this.source;
     if (!source || this.connection !== 'live') return;
     const before = this.testing?.run;
@@ -650,9 +657,11 @@ export class App {
     // A task that left the list (finished) is shown from what was opened; its detail is read again either way.
     this.opened = fresh ?? brief;
     try {
-      this.detail = await this.source.task(brief.id);
+      const detail = await this.source.task(brief.id);
+      // Another task was opened while this was read (a read the timer of a run started): it keeps its own detail.
+      if (this.opened?.id === brief.id) this.detail = detail;
     } catch (error) {
-      this.failed(error);
+      if (this.opened?.id === brief.id) this.failed(error);
     }
   }
 

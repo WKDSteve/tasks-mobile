@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { App, pairingCodeOf, type AppDeps, type DeviceAccess, type DeviceLogin } from './app.svelte';
 import { FakeSource } from './fakeSource';
 import { memoryFileStore } from './attach';
@@ -1106,6 +1106,26 @@ describe('the test sheets of a task, run on the PC', () => {
     // Looked at again after it ended: nothing more to read.
     await app.refreshRun();
     expect(fake.taskReads.slice(reads)).toEqual([ID]);
+  });
+
+  it('a read of the task after a run does not put its detail over another task opened meanwhile', async () => {
+    const { app, fake } = await opened();
+    fake.runEnd = { verdict: 'green', exit: 0, block: { written: true, outcome: 'changed' } };
+    await app.startRun(app.opened!);
+    fake.holdTasks = true;
+    const looked = app.refreshRun();
+    // The button and the timer at once: one look, one read.
+    const again = app.refreshRun();
+    await vi.waitFor(() => expect(fake.taskReads.at(-1)).toBe(ID));
+    const reads = fake.taskReads.length;
+    fake.holdTasks = false;
+    const other = app.view!.tasks.find((t) => t.id !== ID)!;
+    await app.openTask(other);
+    fake.releaseTasks();
+    await Promise.all([looked, again]);
+    expect(fake.taskReads.slice(reads)).toEqual([other.id]);
+    expect(app.opened?.id).toBe(other.id);
+    expect(app.detail?.task.id).toBe(other.id);
   });
 
   it('never shows a verdict it does not know as green: the word is kept', async () => {
