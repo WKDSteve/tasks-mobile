@@ -16,6 +16,7 @@ import type {
   TaskBrief,
   TaskDetail,
   TestingRun,
+  RunBlock,
   RunVerdict,
   VaultView,
 } from './types';
@@ -369,7 +370,18 @@ export function testingSheets(doc: unknown, id: string): string[] | null {
     .slice(0, 50);
 }
 
-const VERDICTS: readonly RunVerdict[] = ['green', 'red', 'refused', 'failed', 'stopped'];
+const VERDICTS: readonly RunVerdict[] = ['green', 'red', 'not_written', 'refused', 'failed', 'stopped'];
+
+/** A plain word of the hub (a verdict or an outcome this page may not know): lowercase letters and `_`, short. */
+function word(v: unknown): string | null {
+  return typeof v === 'string' && /^[a-z_]{1,32}$/.test(v) ? v : null;
+}
+
+function runBlock(v: unknown): RunBlock | null {
+  if (!isObj(v) || typeof v['written'] !== 'boolean') return null;
+  const outcome = word(v['outcome']);
+  return outcome === null ? null : { written: v['written'], outcome };
+}
 
 /** `/api/tasks/testing_run` (and the answer of a start): where the run stands; a field of the wrong type is left out. */
 export function testingRun(doc: unknown): TestingRun {
@@ -379,10 +391,21 @@ export function testingRun(doc: unknown): TestingRun {
   if (!isObj(run)) return { available, run: null };
   const running = run['running'] === true;
   if (run['what'] === 'task' && isTaskId(run['task'])) {
-    const verdict = typeof run['verdict'] === 'string' && (VERDICTS as readonly string[]).includes(run['verdict'])
-      ? (run['verdict'] as RunVerdict)
-      : null;
-    return { available, run: { what: 'task', task: run['task'], running, verdict, exit: int(run['exit']) } };
+    const said = word(run['verdict']);
+    const verdict = said !== null && (VERDICTS as readonly string[]).includes(said) ? (said as RunVerdict) : null;
+    return {
+      available,
+      run: {
+        what: 'task',
+        task: run['task'],
+        running,
+        verdict,
+        word: verdict === null ? said : null,
+        exit: int(run['exit']),
+        block: runBlock(run['block']),
+        sheetsRed: typeof run['sheets_red'] === 'boolean' ? run['sheets_red'] : null,
+      },
+    };
   }
   return { available, run: { what: 'other', running } };
 }

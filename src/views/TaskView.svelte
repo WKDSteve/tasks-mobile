@@ -92,8 +92,13 @@
           </ul>
           {#if run && run.what === 'task'}
             <p data-testid="run-state" data-verdict={run.verdict ?? ''}>
-              {#if run.running}{t('testing.running')}{:else if run.verdict}{t(`testing.verdict.${run.verdict}` as TextKey)}{/if}
+              {#if run.running}{t('testing.running')}{:else if run.verdict}{t(`testing.verdict.${run.verdict}` as TextKey)}{:else if run.word}{t('testing.verdict.unknown', { word: run.word })}{/if}
             </p>
+            {#if !run.running && run.block}
+              <p class="muted" data-testid="run-block">
+                {t(run.block.written ? 'testing.block.written' : 'testing.block.not_written', { outcome: run.block.outcome })}
+              </p>
+            {/if}
             <p><button onclick={() => void app.refreshRun()} disabled={app.busy}>{t('testing.reload')}</button></p>
           {:else if run && run.what === 'other'}
             <p class="muted">{t('testing.other')}</p>

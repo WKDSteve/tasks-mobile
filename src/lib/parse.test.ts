@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { areaClasses, dataClassOf, deviceLevel, testingSheets, donePreview, ExportClassError, isTaskId, MAX_NEXT, nextPicks, opOutcome, phoneExport, ShapeError, statusCounts, taskBrief, taskDetail, vaultView } from './parse';
+import { areaClasses, dataClassOf, deviceLevel, testingSheets, donePreview, ExportClassError, isTaskId, MAX_NEXT, nextPicks, opOutcome, phoneExport, ShapeError, statusCounts, taskBrief, taskDetail, testingRun, vaultView } from './parse';
 
 const classes = new Map([
   ['garden', 'public' as const],
@@ -231,5 +231,25 @@ describe('the test sheets of a task', () => {
     expect(testingSheets({ kind: 'tasks.testing_sheets', id: 'a/b', linked: true, sheets: ['x.lua', 1, ''] }, 'a/b')).toEqual(['x.lua']);
     expect(testingSheets({ kind: 'tasks.testing_sheets', id: 'a/b', linked: false, sheets: [] }, 'a/b')).toBeNull();
     expect(() => testingSheets({ kind: 'tasks.testing_sheets', id: 'a/c', linked: true, sheets: [] }, 'a/b')).toThrow(ShapeError);
+  });
+
+  it('reads the verdict, the block and whether the sheets were red; an unknown verdict keeps its word and is no verdict', () => {
+    const run = (extra: Record<string, unknown>) =>
+      testingRun({ kind: 'tasks.testing_run', available: true, run: { what: 'task', task: 'a/b', running: false, exit: 1, ...extra } }).run;
+    expect(run({ verdict: 'not_written', sheets_red: false, block: { written: false, outcome: 'missing' } })).toMatchObject({
+      verdict: 'not_written',
+      word: null,
+      sheetsRed: false,
+      block: { written: false, outcome: 'missing' },
+    });
+    expect(run({ verdict: 'partly' })).toMatchObject({ verdict: null, word: 'partly' });
+    // Not a plain word: neither a verdict nor shown.
+    expect(run({ verdict: 'C:/x <b>', block: { written: true, outcome: 'Some Text' }, sheets_red: 'no' })).toMatchObject({
+      verdict: null,
+      word: null,
+      block: null,
+      sheetsRed: null,
+    });
+    expect(run({ block: { written: 'yes', outcome: 'changed' } })).toMatchObject({ block: null });
   });
 });

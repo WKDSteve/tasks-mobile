@@ -132,7 +132,13 @@ export interface HubHello {
 }
 
 /** How a run of the test sheets ended, as the testing hub says it. */
-export type RunVerdict = 'green' | 'red' | 'refused' | 'failed' | 'stopped';
+export type RunVerdict = 'green' | 'red' | 'not_written' | 'refused' | 'failed' | 'stopped';
+
+/** What came of writing the block of the run into the task (`changed`, `unchanged`, `failed`, ...: the hub's word). */
+export interface RunBlock {
+  written: boolean;
+  outcome: string;
+}
 
 /** Where the run of the testing hub stands (through the tasks hub, `/api/tasks/testing_run`). */
 export interface TestingRun {
@@ -142,7 +148,19 @@ export interface TestingRun {
   run:
     | null
     | { what: 'other'; running: boolean }
-    | { what: 'task'; task: string; running: boolean; verdict: RunVerdict | null; exit: number | null };
+    | {
+        what: 'task';
+        task: string;
+        running: boolean;
+        /** A verdict this page knows; `word` holds one it does not know (never shown as green). */
+        verdict: RunVerdict | null;
+        word: string | null;
+        exit: number | null;
+        /** What came of the block in the task; `null`: none, or a testing hub that does not say. */
+        block: RunBlock | null;
+        /** Whether the sheets were red; `null`: not said. */
+        sheetsRed: boolean | null;
+      };
 }
 
 /** Signs one request for its confirmation on this device (`x-device-confirm`), after the person confirmed it. */

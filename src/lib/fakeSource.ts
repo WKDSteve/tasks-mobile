@@ -160,6 +160,10 @@ export class FakeSource implements DataSource, FakeControls {
   /** The sheets that name a task, as a testing hub would find them. */
   private readonly sheets: Record<string, string[]> = { 'garden/water-the-plants': ['watering.sheet.lua', 'hoses.sheet.lua'] };
   private run: TestingRun['run'] = null;
+  /** How the next run ends, in the words of the hub (`verdict`, `exit`, `block`, `sheets_red`). */
+  runEnd: Record<string, unknown> = { verdict: 'green', exit: 0 };
+  /** The ids of the task details read. */
+  taskReads: string[] = [];
   loseNextAnswer = false;
   holdTasks = false;
   private held: (() => void)[] = [];
@@ -259,8 +263,15 @@ export class FakeSource implements DataSource, FakeControls {
     this.testing();
     // A run has ended green by the next look (the synthetic testing hub is quick).
     const run = this.run;
-    if (run?.what === 'task' && run.running) this.run = { ...run, running: false, verdict: 'green', exit: 0 };
-    return testingRun({ kind: 'tasks.testing_run', schema: 1, available: true, run: this.run });
+    if (run?.what === 'task' && run.running) {
+      this.run = testingRun({
+        kind: 'tasks.testing_run',
+        schema: 1,
+        available: true,
+        run: { what: 'task', task: run.task, running: false, ...this.runEnd },
+      }).run;
+    }
+    return { available: true, run: this.run };
   }
 
   async testingStart(id: string, confirm: ConfirmRequest): Promise<TestingRun> {
@@ -270,8 +281,14 @@ export class FakeSource implements DataSource, FakeControls {
     if (!(this.sheets[id]?.length)) throw new HubRefused(404, 'no_sheet', 'no sheet names this task');
     if (this.run?.what === 'task' && this.run.running) throw new HubRefused(409, 'busy', 'a run is under way');
     this.testingStarts.push({ id, confirm: header });
-    this.run = { what: 'task', task: id, running: true, verdict: null, exit: null };
-    return testingRun({ kind: 'tasks.testing_run', schema: 1, available: true, run: this.run });
+    const started = testingRun({
+      kind: 'tasks.testing_run',
+      schema: 1,
+      available: true,
+      run: { what: 'task', task: id, running: true, verdict: null, exit: null },
+    });
+    this.run = started.run;
+    return started;
   }
 
   async vault(): Promise<VaultView> {
@@ -315,6 +332,7 @@ export class FakeSource implements DataSource, FakeControls {
 
   async task(id: string): Promise<TaskDetail> {
     this.reachable();
+    this.taskReads.push(id);
     if (this.holdTasks) await new Promise<void>((go) => this.held.push(go));
     const t = this.tasks.find((x) => x.id === id);
     if (!t) throw new Error('not found');

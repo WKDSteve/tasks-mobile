@@ -1089,6 +1089,33 @@ describe('the test sheets of a task, run on the PC', () => {
     expect(app.testing?.run).toMatchObject({ running: false, verdict: 'green' });
   });
 
+  it('tells a run that wrote no task as its own verdict, with the block, and reads the task again after a written block', async () => {
+    const { app, fake } = await opened();
+    fake.runEnd = { verdict: 'not_written', exit: 1, sheets_red: false, block: { written: false, outcome: 'missing' } };
+    await app.startRun(app.opened!);
+    const reads = fake.taskReads.length;
+    await app.refreshRun();
+    expect(app.testing?.run).toMatchObject({ running: false, verdict: 'not_written', word: null, sheetsRed: false, block: { written: false, outcome: 'missing' } });
+    expect(fake.taskReads.length).toBe(reads);
+
+    fake.runEnd = { verdict: 'green', exit: 0, sheets_red: false, block: { written: true, outcome: 'changed' } };
+    await app.startRun(app.opened!);
+    await app.refreshRun();
+    expect(app.testing?.run).toMatchObject({ verdict: 'green', block: { written: true, outcome: 'changed' } });
+    expect(fake.taskReads.slice(reads)).toEqual([ID]);
+    // Looked at again after it ended: nothing more to read.
+    await app.refreshRun();
+    expect(fake.taskReads.slice(reads)).toEqual([ID]);
+  });
+
+  it('never shows a verdict it does not know as green: the word is kept', async () => {
+    const { app, fake } = await opened();
+    fake.runEnd = { verdict: 'partly', exit: 3 };
+    await app.startRun(app.opened!);
+    await app.refreshRun();
+    expect(app.testing?.run).toMatchObject({ verdict: null, word: 'partly', block: null, sheetsRed: null });
+  });
+
   it('starts nothing below trigger, or on a device that cannot confirm', async () => {
     for (const over of [{ level: 'change' as const }, { confirmable: false }]) {
       const { app, fake } = await opened(over);

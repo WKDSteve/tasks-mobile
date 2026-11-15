@@ -509,10 +509,24 @@ export class App {
   async refreshRun(): Promise<void> {
     const source = this.source;
     if (!source || this.connection !== 'live') return;
+    const before = this.testing?.run;
     try {
       this.testing = await source.testingRun();
     } catch (error) {
       if (!(error instanceof HubRefused) && !(error instanceof Unreachable)) this.failed(error);
+      return;
+    }
+    // A run that wrote its block into the task changed it: the detail on the screen is read again.
+    const now = this.testing.run;
+    if (
+      before?.what === 'task' &&
+      before.running &&
+      now?.what === 'task' &&
+      !now.running &&
+      now.block?.written === true &&
+      this.opened?.id === now.task
+    ) {
+      await this.reopen();
     }
   }
 
