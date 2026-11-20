@@ -12,11 +12,11 @@ import type { KeptView } from './storage';
 import { isFresh } from './storage';
 import { localDay } from './today';
 import type { CacheStore } from 'appkit-ui/cache';
-import type { ConfirmRequest, DonePreview, Op, PathBrief, PathDetail, PathPoint, PointState, Status, TaskBrief, TaskDetail, TestingRun, VaultView } from './types';
+import type { CaptureKind, ConfirmRequest, DonePreview, MeetingBrief, MeetingDetail, Op, PathBrief, PathDetail, PathPoint, PointState, Status, TaskBrief, TaskDetail, TestingRun, VaultView } from './types';
 import type { TextKey } from './i18n';
 import type { Shared } from './share';
 
-export type Screen = 'pair' | 'today' | 'list' | 'capture' | 'queue' | 'task' | 'paths' | 'path';
+export type Screen = 'pair' | 'today' | 'list' | 'capture' | 'queue' | 'task' | 'paths' | 'path' | 'meetings' | 'meeting';
 export type Connection = 'checking' | 'live' | 'offline';
 
 export interface AppDeps {
@@ -54,6 +54,9 @@ export interface RetryTimer {
  * would hear of (no `online`, no `visibilitychange`), so it asks again by itself, less often the longer it lasts.
  */
 export const RETRY_MS = [5_000, 15_000, 60_000];
+
+/** How many days ahead the coming meetings are read (today included). */
+export const MEETING_DAYS = 14;
 
 /** How long the start waits for the browser to say whether notices are on. */
 export const PUSH_READ_MS = 2_000;
@@ -410,6 +413,7 @@ export class App {
       // taken, a file that waits) stays until the person moves on: it is about the write, not about the hub.
       if (this.notice?.tone === 'error' && this.notice.key.startsWith('error.')) this.notice = null;
       await this.deps.viewStore.save({ view, at: this.viewAt });
+      await this.readMeetings(source);
     } catch (error) {
       if (error instanceof Unpaired) {
         if (retry && (await this.renew())) return this.load(false);
@@ -442,6 +446,73 @@ export class App {
 
   /** The screen a task was opened from ("Today" or the list): "back" and a finish go there. */
   returnTo = $state<'today' | 'list'>('list');
+
+  /** The meetings of the shown areas from today on (`MEETING_DAYS`), as last read; null: not read (offline, or a hub without them). */
+  meetings = $state<MeetingBrief[] | null>(null);
+  meetingsPartial = $state(false);
+  /** The meeting opened, and its agenda and minutes once read. */
+  openedMeeting = $state<MeetingBrief | null>(null);
+  meetingView = $state<MeetingDetail | null>(null);
+
+  /**
+   * The coming meetings, read with the list. An optional signal (MOB-09): a hub that does not give them, or an answer
+   * that is no list, leaves them unread and the rest of the page as it is.
+   */
+  private async readMeetings(source: DataSource): Promise<void> {
+    const since = this.day;
+    const end = new Date(`${since}T12:00:00`);
+    end.setDate(end.getDate() + MEETING_DAYS);
+    const until = `${end.getFullYear()}-${String(end.getMonth() + 1).padStart(2, '0')}-${String(end.getDate()).padStart(2, '0')}`;
+    try {
+      const read = await source.meetings(since, until);
+      this.meetings = read.meetings;
+      this.meetingsPartial = read.partial;
+    } catch (error) {
+      if (error instanceof Unpaired || error instanceof Unreachable) throw error;
+      this.meetings = null;
+    }
+  }
+
+  async openMeeting(brief: MeetingBrief): Promise<void> {
+    this.openedMeeting = brief;
+    this.meetingView = null;
+    this.screen = 'meeting';
+    await this.readMeeting();
+  }
+
+  private async readMeeting(): Promise<void> {
+    const brief = this.openedMeeting;
+    if (!brief || !this.source || this.connection !== 'live') return;
+    try {
+      const detail = await this.source.meeting(brief.id);
+      if (this.openedMeeting?.id !== brief.id) return;
+      this.meetingView = detail;
+      this.openedMeeting = detail.meeting;
+    } catch (error) {
+      if (this.openedMeeting?.id === brief.id) this.failed(error);
+    }
+  }
+
+  /**
+   * A line of the minutes of the opened meeting: text, a task, a decision or a question, with the time of the phone (a
+   * line sent later keeps it). Through the queue; the engine appends it, so it needs no version.
+   */
+  async captureLine(kind: CaptureKind, text: string): Promise<boolean> {
+    const meeting = this.meetingView?.meeting;
+    const line = text.replace(/[\r\n]+/g, ' ').trim().slice(0, 2000);
+    if (!meeting || line === '') return false;
+    const now = this.deps.now();
+    const at = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+    this.busy = true;
+    try {
+      const item = await this.enqueue({ op: 'meeting_capture', id: meeting.id, entry: { kind, text: line, at } }, meeting.area, meeting.title);
+      if (!item) return false;
+      await this.readMeeting();
+      return true;
+    } finally {
+      this.busy = false;
+    }
+  }
 
   /** The learning paths of the shown areas, as last read (not kept on the phone: they are read when the list opens). */
   paths = $state<PathBrief[] | null>(null);

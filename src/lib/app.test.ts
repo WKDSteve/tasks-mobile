@@ -65,6 +65,8 @@ function sourceFor(fake: FakeSource, dead: Set<string | null>): (token: string |
       vault: () => gate(() => fake.vault()),
       task: (id) => gate(() => fake.task(id)),
       paths: () => gate(() => fake.paths()),
+      meetings: (since, until) => gate(() => fake.meetings(since, until)),
+      meeting: (id) => gate(() => fake.meeting(id)),
       path: (id) => gate(() => fake.path(id)),
       write: (id, op) => gate(() => fake.write(id, op)),
       donePreview: (id) => gate(() => fake.donePreview(id)),
@@ -195,6 +197,26 @@ describe('App on the synthetic vault', () => {
     });
     // Both leaves below Grundlagen are closed: the engine's state of the point above follows.
     expect(app.pathView?.points[0]?.derived).toBe('learned');
+  });
+
+  it('reads the coming meetings with the list and writes a line of the minutes with the time of the phone', async () => {
+    const fake = new FakeSource();
+    const app = new App(deps(fake));
+    await app.start(null);
+    expect(app.meetings?.map((m) => m.id)).toEqual(['kitchen/einkauf-planen', 'garden/zaun-besprechen']);
+    await app.openMeeting(app.meetings![0]!);
+    expect(app.screen).toBe('meeting');
+    expect(app.meetingView?.agenda.map((a) => a.text)).toEqual(['Vorräte', 'Wochenplan']);
+    expect(await app.captureLine('task', '  Milch\nkaufen ')).toBe(true);
+    const op = fake.writes[0]?.op as { op: string; id: string; entry: { kind: string; text: string; at: string } };
+    expect(op.op).toBe('meeting_capture');
+    expect(op.id).toBe('kitchen/einkauf-planen');
+    expect(op.entry.kind).toBe('task');
+    expect(op.entry.text).toBe('Milch kaufen');
+    expect(op.entry.at).toMatch(/^\d{2}:\d{2}$/);
+    expect(app.meetingView?.minutes.map((m) => m.text)).toContain('Aufgabe: Milch kaufen');
+    expect(await app.captureLine('text', '   ')).toBe(false);
+    expect(fake.writes).toHaveLength(1);
   });
 
   it('sends no change of a task whose version it does not know, and says so (MOB-08)', async () => {

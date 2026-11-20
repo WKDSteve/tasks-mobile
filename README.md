@@ -28,6 +28,9 @@ What is there:
   form is filled (it never creates a task by itself).
 - **A task**: its text, its status (set it), its open questions (answer them), and finishing it after the engine said
   what that sets off (a plan it closes, tasks it frees).
+- **Meetings**: Today names the coming meetings of the next two weeks; one shows its time, place, agenda, minutes and
+  follow-ups, Join where the PC lets the address out (a public area, or an internal one it allows), and takes a line of
+  the minutes: a note, a task, a decision or a question. Read only while the PC can be reached.
 - **Learn**: the learning paths of the released areas with their progress; one path as a tree of its points, each
   opened as a link (web addresses only) and ticked as learned, or as looked at or not needed with a reason. Read only
   while the PC can be reached; a tick waits in the queue like any change.

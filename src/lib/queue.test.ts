@@ -37,6 +37,12 @@ function source(answers: ((op: QueueOp) => OpOutcome | Error)[]): DataSource & {
     paths: async () => {
       throw new Error('unused');
     },
+    meetings: async () => {
+      throw new Error('unused');
+    },
+    meeting: async () => {
+      throw new Error('unused');
+    },
     path: async () => {
       throw new Error('unused');
     },
@@ -86,6 +92,12 @@ describe('WriteQueue', () => {
     await expect(q.add({ op: 'set', id: 'garden/a', patch: { status: 'doing' } }, 'garden', 'A')).rejects.toThrow('if_match required');
     expect(q.items).toEqual([]);
     await q.add({ op: 'set', id: 'garden/a', patch: { status: 'doing' }, if_match: 'e1' }, 'garden', 'A');
+    expect(q.items).toHaveLength(1);
+  });
+
+  it('queues a line of the minutes without a version (an append), and refuses an empty or unknown one', async () => {
+    const q = new WriteQueue(memory(), ids, clock);
+    await q.add({ op: 'meeting_capture', id: 'garden/m', entry: { kind: 'task', text: 'Mail', at: '10:00' } }, 'garden', 'M');
     expect(q.items).toHaveLength(1);
   });
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { areaClasses, dataClassOf, deviceLevel, testingSheets, donePreview, ExportClassError, isTaskId, MAX_NEXT, nextPicks, opOutcome, pathDetail, pathList, phoneExport, ShapeError, statusCounts, taskBrief, taskDetail, testingRun, vaultView } from './parse';
+import { areaClasses, dataClassOf, deviceLevel, testingSheets, donePreview, ExportClassError, isTaskId, MAX_NEXT, nextPicks, opOutcome, meetingDetail, meetingList, minutesOf, pathDetail, pathList, phoneExport, ShapeError, statusCounts, taskBrief, taskDetail, testingRun, vaultView } from './parse';
 
 const classes = new Map([
   ['garden', 'public' as const],
@@ -304,5 +304,53 @@ describe('learning paths (the hub cut them; the page checks again)', () => {
     expect(d.points[2]?.reason).toBe('kenne ich');
     expect(d.points[0]?.derived).toBe('learned');
     expect(() => pathDetail({ ...doc, path: entry('secret/x', 'secret') }, classes)).toThrow(ShapeError);
+  });
+});
+
+describe('meetings (the hub cut them; the page checks again)', () => {
+  const entry = (id: string, area: string, more: Record<string, unknown> = {}) => ({
+    id, area, title: `Meeting ${id}`, status: 'planned', date: '2026-11-24', time: '10:00', ...more,
+  });
+
+  it('keeps the meetings of shown areas in the order of their time, a join address only as a web address', () => {
+    const { meetings, partial } = meetingList(
+      {
+        kind: 'tasks.meetings',
+        items: [
+          entry('garden/b', 'garden', { time: '14:00', online: 'https://meet.jit.si/b', online_service: 'jitsi' }),
+          entry('kitchen/a', 'kitchen', { online: 'file:///E:/x' }),
+          entry('secret/x', 'secret'),
+          entry('loose/y', 'loose'),
+          entry('garden/no-day', 'garden', { date: 'soon' }),
+        ],
+        partial: true,
+      },
+      classes,
+    );
+    expect(meetings.map((m) => m.id)).toEqual(['kitchen/a', 'garden/b']);
+    expect(meetings[0]?.online).toBeNull();
+    expect(meetings[1]?.online).toBe('https://meet.jit.si/b');
+    expect(meetings[1]?.onlineService).toBe('jitsi');
+    expect(partial).toBe(true);
+  });
+
+  it('reads the minutes of a body as the engine writes them, and refuses a meeting of a hidden area', () => {
+    expect(minutesOf('Kurz.\n\n## Protokoll\n\n- 10:00 Start\n- 10:05 Aufgabe: Mail\nnoise\n\n## Beschlüsse\n\n- 11:00 not minutes\n')).toEqual([
+      { at: '10:00', text: 'Start' },
+      { at: '10:05', text: 'Aufgabe: Mail' },
+    ]);
+    expect(minutesOf('## Minutes\n\n- 08:00 Hello\n')).toEqual([{ at: '08:00', text: 'Hello' }]);
+    const doc = {
+      kind: 'tasks.meeting',
+      meeting: entry('garden/b', 'garden'),
+      body: '## Protokoll\n\n- 10:00 Start\n',
+      agenda: [{ n: 1, text: 'Stand', ticked: true }],
+      followups: [{ n: 1, text: 'Mail', ticked: false, task: 'garden/t' }],
+    };
+    const d = meetingDetail(doc, classes);
+    expect(d.minutes).toEqual([{ at: '10:00', text: 'Start' }]);
+    expect(d.agenda).toEqual([{ n: 1, text: 'Stand', ticked: true }]);
+    expect(d.followups[0]?.task).toBe('garden/t');
+    expect(() => meetingDetail({ ...doc, meeting: entry('secret/x', 'secret') }, classes)).toThrow(ShapeError);
   });
 });

@@ -19,7 +19,7 @@ import { memoryFileStore, restoreRef, type AttachmentRef, type FileStore } from 
 import { isAreaName, isTaskId } from './parse';
 import { AnswerLost, HubRefused, Unpaired, Unreachable, type DataSource } from './source';
 import type { Op } from './types';
-import { POINT_STATES, STATUSES } from './types';
+import { CAPTURE_KINDS, POINT_STATES, STATUSES } from './types';
 
 export type { FlushReport, PendingState, QueueStore };
 
@@ -68,6 +68,20 @@ function validOp(value: unknown): value is QueueOp {
         (op['reason'] === undefined || (typeof op['reason'] === 'string' && op['reason'].length <= 500)) &&
         ifMatch
       );
+    case 'meeting_capture': {
+      // A line of the minutes is appended, never a rewrite: it needs no version (two devices at once lose nothing).
+      const entry = op['entry'] as Record<string, unknown> | undefined;
+      return (
+        isTaskId(op['id']) &&
+        typeof entry === 'object' &&
+        entry !== null &&
+        (CAPTURE_KINDS as readonly unknown[]).includes(entry['kind']) &&
+        typeof entry['text'] === 'string' &&
+        entry['text'].length > 0 &&
+        entry['text'].length <= 2000 &&
+        (entry['at'] === undefined || (typeof entry['at'] === 'string' && /^\d{2}:\d{2}$/.test(entry['at'])))
+      );
+    }
     case 'upload':
       return isTaskId(op['id']) && restoreRef(op['file']) !== null;
     default:

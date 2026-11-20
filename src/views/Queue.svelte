@@ -27,6 +27,8 @@
         return t('queue.op.done', { label });
       case 'node_set':
         return t('queue.op.node_set', { label, state: t(`point.${item.op.state}` as TextKey) });
+      case 'meeting_capture':
+        return t('queue.op.meeting_capture', { label, text: markHidden(item.op.entry.text) });
     }
   }
 </script>

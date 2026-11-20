@@ -141,13 +141,49 @@ export interface PathDetail {
   points: PathPoint[];
 }
 
+/** A meeting as the phone shows it (the hub's cut, `tasks.meetings`): time, place, and how to join. */
+export interface MeetingBrief {
+  id: string;
+  area: string;
+  title: string;
+  /** `planned`, `done` or `cancelled`. */
+  status: string;
+  /** `YYYY-MM-DD`, and `HH:MM` when it is not all day. */
+  date: string;
+  time: string | null;
+  end: string | null;
+  location: string | null;
+  /** The address to join: only when the hub let it out (a public area, or the PC's choice for an internal one). */
+  online: string | null;
+  onlineService: string | null;
+  icon: string | null;
+}
+
+/** A line of the minutes, as the engine wrote it into `## Protokoll` (its time and its text). */
+export interface MinuteLine {
+  at: string;
+  text: string;
+}
+
+export interface MeetingDetail {
+  meeting: MeetingBrief;
+  agenda: { n: number; text: string; ticked: boolean }[];
+  minutes: MinuteLine[];
+  followups: { n: number; text: string; ticked: boolean; task: string | null }[];
+}
+
+/** What a line of the minutes written on the phone is: the engine writes it into its section too. */
+export type CaptureKind = 'text' | 'task' | 'decision' | 'question';
+export const CAPTURE_KINDS: readonly CaptureKind[] = ['text', 'task', 'decision', 'question'];
+
 /** The operations this page sends. The engine checks every one of them. */
 export type Op =
   | { op: 'new'; area: string; title: string; body?: string }
   | { op: 'set'; id: string; patch: { status: Status }; if_match?: string }
   | { op: 'answer'; id: string; question: string; option: number; if_match?: string }
   | { op: 'done'; id: string; confirm: string }
-  | { op: 'node_set'; id: string; point: string; state: PointState; reason?: string; if_match?: string };
+  | { op: 'node_set'; id: string; point: string; state: PointState; reason?: string; if_match?: string }
+  | { op: 'meeting_capture'; id: string; entry: { kind: CaptureKind; text: string; at?: string } };
 
 export type OpErrorCode =
   | 'invalid_argument'

@@ -10,6 +10,9 @@ import type {
   NextPick,
   OpErrorCode,
   OpOutcome,
+  MeetingBrief,
+  MeetingDetail,
+  MinuteLine,
   PathBrief,
   PathDetail,
   PathPoint,
@@ -400,6 +403,83 @@ export function pathDetail(doc: unknown, classes: Map<string, DataClass>): PathD
     : [];
   const rawBody = typeof doc['body'] === 'string' ? doc['body'] : '';
   return { path, body: rawBody.slice(0, MAX_BODY), points };
+}
+
+/** The longest list of meetings taken (the hub sends one page of at most 100). */
+export const MAX_MEETINGS = 100;
+
+/** A meeting of the list; null when it is no meeting of a shown area (the hub cut already; the page checks again). */
+export function meetingBrief(value: unknown, classes: Map<string, DataClass>): MeetingBrief | null {
+  if (!isObj(value)) return null;
+  const id = value['id'];
+  const area = value['area'];
+  const title = str(value['title']);
+  const date = day(value['date']);
+  if (!isTaskId(id) || !isAreaName(area) || id.split('/')[0] !== area || title === null || date === null) return null;
+  if (!shownClass(classes.get(area) ?? 'unclassified')) return null;
+  const time = typeof value['time'] === 'string' && /^\d{2}:\d{2}$/.test(value['time']) ? value['time'] : null;
+  const online = webLink(value['online']);
+  return {
+    id,
+    area,
+    title,
+    status: str(value['status'], 20) ?? 'planned',
+    date,
+    time,
+    end: str(value['end'], 20),
+    location: str(value['location'], 200),
+    online,
+    onlineService: online ? str(value['online_service'], 20) : null,
+    icon: isObj(value['icon']) && value['icon']['kind'] === 'emoji' ? str(value['icon']['value'], 16) : null,
+  };
+}
+
+/** `tasks.meetings` as the hub cut it, in the order of their time; `partial`: the window held more. */
+export function meetingList(doc: unknown, classes: Map<string, DataClass>): { meetings: MeetingBrief[]; partial: boolean } {
+  if (!isObj(doc) || doc['kind'] !== 'tasks.meetings' || !Array.isArray(doc['items'])) throw new ShapeError('meetings');
+  const meetings = doc['items']
+    .slice(0, MAX_MEETINGS)
+    .map((item) => meetingBrief(item, classes))
+    .filter((m): m is MeetingBrief => m !== null)
+    .sort((a, b) => `${a.date} ${a.time ?? ''}`.localeCompare(`${b.date} ${b.time ?? ''}`));
+  return { meetings, partial: doc['partial'] === true };
+}
+
+/** The lines of `## Protokoll` (or `## Minutes`) of a body, as the engine writes them: `- HH:MM text`. */
+export function minutesOf(body: string): MinuteLine[] {
+  const lines = body.split(/\r?\n/);
+  const at = lines.findIndex((l) => /^## (Protokoll|Minutes)\s*$/.test(l));
+  if (at < 0) return [];
+  const out: MinuteLine[] = [];
+  for (const line of lines.slice(at + 1)) {
+    if (/^## /.test(line)) break;
+    const m = /^- (\d{2}:\d{2}) (.+)$/.exec(line.trim());
+    if (m) out.push({ at: m[1] ?? '', text: (m[2] ?? '').slice(0, MAX_LINE) });
+  }
+  return out;
+}
+
+/** `tasks.meeting` as the hub cut it; a meeting of an area this phone does not show is refused. */
+export function meetingDetail(doc: unknown, classes: Map<string, DataClass>): MeetingDetail {
+  if (!isObj(doc) || doc['kind'] !== 'tasks.meeting') throw new ShapeError('meeting');
+  const meeting = meetingBrief(doc['meeting'], classes);
+  if (meeting === null) throw new ShapeError('meeting of a hidden area');
+  const items = (v: unknown) => (Array.isArray(v) ? v.filter(isObj) : []);
+  return {
+    meeting,
+    agenda: items(doc['agenda'])
+      .map((a) => ({ n: count(a['n']), text: str(a['text']) ?? '', ticked: a['ticked'] === true }))
+      .filter((a) => a.text !== ''),
+    minutes: minutesOf(typeof doc['body'] === 'string' ? doc['body'].slice(0, MAX_BODY) : ''),
+    followups: items(doc['followups'])
+      .map((f) => ({
+        n: count(f['n']),
+        text: str(f['text']) ?? '',
+        ticked: f['ticked'] === true,
+        task: isTaskId(f['task']) ? (f['task'] as string) : null,
+      }))
+      .filter((f) => f.text !== ''),
+  };
 }
 
 export const OP_ERROR_CODES: readonly OpErrorCode[] = [

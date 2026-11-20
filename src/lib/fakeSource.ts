@@ -6,11 +6,11 @@
 //
 // The names are neutral (APP-01): nothing here is a real area or a real task.
 
-import { areaClasses, deviceLevel, donePreview, hubHello, testingRun, testingSheets, opOutcome, pathDetail, pathList, taskDetail, vaultView } from './parse';
+import { areaClasses, deviceLevel, donePreview, hubHello, meetingDetail, meetingList, testingRun, testingSheets, opOutcome, pathDetail, pathList, taskDetail, vaultView } from './parse';
 import { AnswerLost, HubRefused, Unreachable, type DataSource } from './source';
 import type { PushSubscriptionBody } from './push';
 import type { Right } from './rights';
-import type { ConfirmRequest, DataClass, DonePreview, HubHello, Op, OpOutcome, PathBrief, PathDetail, TaskDetail, TestingRun, VaultView } from './types';
+import type { ConfirmRequest, DataClass, DonePreview, HubHello, MeetingBrief, MeetingDetail, Op, OpOutcome, PathBrief, PathDetail, TaskDetail, TestingRun, VaultView } from './types';
 
 interface FakeTask {
   id: string;
@@ -179,6 +179,51 @@ function initialPaths(): FakePath[] {
 
 const CLOSED = new Set(['learned', 'seen', 'dropped']);
 
+/** A meeting of the fake vault, `inDays` from today; its minutes are lines `HH:MM text`. */
+interface FakeMeeting {
+  id: string;
+  area: string;
+  title: string;
+  inDays: number;
+  time: string;
+  location?: string;
+  online?: string;
+  agenda: string[];
+  minutes: string[];
+}
+
+function initialMeetings(): FakeMeeting[] {
+  return [
+    {
+      id: 'kitchen/einkauf-planen',
+      area: 'kitchen',
+      title: 'Einkauf planen',
+      inDays: 0,
+      time: '18:00',
+      location: 'Küche',
+      agenda: ['Vorräte', 'Wochenplan'],
+      minutes: ['17:55 Liste liegt bereit'],
+    },
+    {
+      id: 'garden/zaun-besprechen',
+      area: 'garden',
+      title: 'Zaun besprechen',
+      inDays: 2,
+      time: '10:00',
+      online: 'https://meet.jit.si/zaun',
+      agenda: ['Holz oder Metall'],
+      minutes: [],
+    },
+  ];
+}
+
+/** The local day `days` from now, `YYYY-MM-DD`. */
+function dayFrom(days: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() + days);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 function slugOf(title: string): string {
   return (
     title
@@ -218,6 +263,7 @@ export class FakeSource implements DataSource, FakeControls {
   pushed: PushSubscriptionBody | null = null;
   private tasks = initialTasks();
   private learning = initialPaths();
+  private gatherings = initialMeetings();
   private rev = 1;
   private seen = new Map<string, OpOutcome>();
 
@@ -442,6 +488,54 @@ export class FakeSource implements DataSource, FakeControls {
     return pathList(doc, this.classes());
   }
 
+  private meetingEntry(m: FakeMeeting): Record<string, unknown> {
+    return {
+      id: m.id,
+      area: m.area,
+      slug: m.id.split('/')[1],
+      title: m.title,
+      status: 'planned',
+      date: dayFrom(m.inDays),
+      time: m.time,
+      ...(m.location ? { location: m.location } : {}),
+      ...(m.online ? { online: m.online, online_service: 'jitsi' } : {}),
+      etag: 'e1',
+    };
+  }
+
+  /** The window is the hub's to apply; the fake vault's meetings lie around the day of the real clock, whatever the page's is. */
+  async meetings(_since: string, _until: string): Promise<{ meetings: MeetingBrief[]; partial: boolean }> {
+    this.reachable();
+    const doc = {
+      ...HEAD,
+      kind: 'tasks.meetings',
+      items: [
+        ...this.gatherings.map((m) => this.meetingEntry(m)),
+        { id: 'vault-secret/geheim', area: 'vault-secret', title: 'SECRET-MARKER', date: dayFrom(1), time: '09:00' },
+      ],
+      partial: false,
+    };
+    return meetingList(doc, this.classes());
+  }
+
+  async meeting(id: string): Promise<MeetingDetail> {
+    this.reachable();
+    const m = this.gatherings.find((x) => x.id === id);
+    if (!m) throw new HubRefused(404, 'not_found', `no such meeting: ${id}`);
+    const body = `Kurz.\n\n## Protokoll\n\n${m.minutes.map((l) => `- ${l}`).join('\n')}\n`;
+    return meetingDetail(
+      {
+        ...HEAD,
+        kind: 'tasks.meeting',
+        meeting: this.meetingEntry(m),
+        body,
+        agenda: m.agenda.map((text, i) => ({ n: i + 1, text, ticked: false })),
+        followups: [],
+      },
+      this.classes(),
+    );
+  }
+
   async path(id: string): Promise<PathDetail> {
     this.reachable();
     const p = this.learning.find((x) => x.id === id);
@@ -482,6 +576,13 @@ export class FakeSource implements DataSource, FakeControls {
   }
 
   private apply(op: Op): unknown {
+    if (op.op === 'meeting_capture') {
+      const m = this.gatherings.find((x) => x.id === op.id);
+      if (!m) return this.result(false, null, { code: 'not_found', message: 'no such meeting' });
+      const words: Record<string, string> = { task: 'Aufgabe: ', decision: 'Beschluss: ', question: 'Frage: ', text: '' };
+      m.minutes.push(`${op.entry.at ?? '12:00'} ${words[op.entry.kind] ?? ''}${op.entry.text}`);
+      return this.result(true, m.id);
+    }
     if (op.op === 'node_set') {
       const p = this.learning.find((x) => x.id === op.id);
       const pt = p?.points.find((x) => x.key === op.point);

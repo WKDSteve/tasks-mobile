@@ -7,6 +7,7 @@
   import type { Translate, TextKey } from '../lib/i18n';
   import { todayOf } from '../lib/today';
   import type { TaskBrief } from '../lib/types';
+  import MeetingList from './MeetingList.svelte';
 
   let { app, t }: { app: App; t: Translate } = $props();
 
@@ -104,6 +105,8 @@
     <p class="muted note" data-testid="today-counts-part">{t('today.counts_part', { n: app.view.hiddenAreas })}</p>
   {/if}
 </section>
+
+<MeetingList {app} {t} limit={3} />
 
 <style>
   section {

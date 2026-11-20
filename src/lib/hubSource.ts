@@ -2,11 +2,11 @@
 // the kit's `HubClient`; this file maps the routes and turns every failure into one of the errors of `source.ts`.
 
 import { HubClient } from 'appkit-ui/client';
-import { areaClasses, deviceLevel, donePreview, hubHello, OP_ERROR_CODES, opOutcome, pathDetail, pathList, taskDetail, testingRun, testingSheets, vaultView } from './parse';
+import { areaClasses, deviceLevel, donePreview, hubHello, meetingDetail, meetingList, OP_ERROR_CODES, opOutcome, pathDetail, pathList, taskDetail, testingRun, testingSheets, vaultView } from './parse';
 import { pushKey, type PushSubscriptionBody } from './push';
 import type { Right } from './rights';
 import { AnswerLost, HubRefused, Unpaired, Unreachable, type DataSource } from './source';
-import type { ConfirmRequest, DataClass, DonePreview, HubHello, Op, OpErrorCode, OpOutcome, PathBrief, PathDetail, TaskDetail, TestingRun, VaultView } from './types';
+import type { ConfirmRequest, DataClass, DonePreview, HubHello, MeetingBrief, MeetingDetail, Op, OpErrorCode, OpOutcome, PathBrief, PathDetail, TaskDetail, TestingRun, VaultView } from './types';
 
 /** How long a read may take before the page calls the hub unreachable (MSEC-08). */
 export const READ_TIMEOUT_MS = 15_000;
@@ -105,6 +105,16 @@ export class HubSource implements DataSource {
   async paths(): Promise<{ paths: PathBrief[]; partial: boolean }> {
     if (this.classes.size === 0) this.classes = areaClasses(await this.read('/api/tasks/areas'));
     return pathList(await this.read('/api/tasks/paths'), this.classes);
+  }
+
+  async meetings(since: string, until: string): Promise<{ meetings: MeetingBrief[]; partial: boolean }> {
+    if (this.classes.size === 0) this.classes = areaClasses(await this.read('/api/tasks/areas'));
+    return meetingList(await this.read(`/api/tasks/meetings?since=${since}&until=${until}&limit=100`), this.classes);
+  }
+
+  async meeting(id: string): Promise<MeetingDetail> {
+    if (this.classes.size === 0) this.classes = areaClasses(await this.read('/api/tasks/areas'));
+    return meetingDetail(await this.read(`/api/tasks/meeting?id=${idParam(id)}`), this.classes);
   }
 
   async path(id: string): Promise<PathDetail> {
