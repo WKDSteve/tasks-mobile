@@ -5,7 +5,7 @@ import { memoryFileStore } from './attach';
 import { restoreDraft, type KeptDraft } from './capture';
 import { memoryStore } from './storage';
 import type { KeptView } from './storage';
-import { HubRefused, Unpaired, type DataSource } from './source';
+import { HubRefused, Unpaired, Unreachable, type DataSource } from './source';
 import type { PushAccess } from './push';
 
 const GOOD_CODE = 'b'.repeat(32);
@@ -197,6 +197,18 @@ describe('App on the synthetic vault', () => {
     });
     // Both leaves below Grundlagen are closed: the engine's state of the point above follows.
     expect(app.pathView?.points[0]?.derived).toBe('learned');
+  });
+
+  it('stays live when the meetings do not come in time: they are an optional signal (MOB-09)', async () => {
+    const fake = new FakeSource();
+    fake.meetings = async () => {
+      throw new Unreachable(new Error('timeout'));
+    };
+    const app = new App(deps(fake));
+    await app.start(null);
+    expect(app.connection).toBe('live');
+    expect(app.view?.tasks.length).toBeGreaterThan(0);
+    expect(app.meetings).toBeNull();
   });
 
   it('reads the coming meetings with the list and writes a line of the minutes with the time of the phone', async () => {

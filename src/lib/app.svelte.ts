@@ -468,7 +468,9 @@ export class App {
       this.meetings = read.meetings;
       this.meetingsPartial = read.partial;
     } catch (error) {
-      if (error instanceof Unpaired || error instanceof Unreachable) throw error;
+      // A lost session is the hub's word for the whole page; anything else (a slow answer, a hub without the route)
+      // leaves only the meetings unread: the list was read, the page stays live.
+      if (error instanceof Unpaired) throw error;
       this.meetings = null;
     }
   }
