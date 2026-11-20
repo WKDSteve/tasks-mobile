@@ -34,6 +34,12 @@ function source(answers: ((op: QueueOp) => OpOutcome | Error)[]): DataSource & {
     task: async () => {
       throw new Error('unused');
     },
+    paths: async () => {
+      throw new Error('unused');
+    },
+    path: async () => {
+      throw new Error('unused');
+    },
     donePreview: async () => {
       throw new Error('unused');
     },
@@ -80,6 +86,15 @@ describe('WriteQueue', () => {
     await expect(q.add({ op: 'set', id: 'garden/a', patch: { status: 'doing' } }, 'garden', 'A')).rejects.toThrow('if_match required');
     expect(q.items).toEqual([]);
     await q.add({ op: 'set', id: 'garden/a', patch: { status: 'doing' }, if_match: 'e1' }, 'garden', 'A');
+    expect(q.items).toHaveLength(1);
+  });
+
+  it('queues a tick of a learning point only with the version of the path that was seen (MOB-08)', async () => {
+    const q = new WriteQueue(memory(), ids, clock);
+    await expect(q.add({ op: 'node_set', id: 'garden/rust', point: 'a', state: 'learned' }, 'garden', 'Rust')).rejects.toThrow(
+      'if_match required',
+    );
+    await q.add({ op: 'node_set', id: 'garden/rust', point: 'a', state: 'seen', reason: 'kenne ich', if_match: 'e1' }, 'garden', 'Rust');
     expect(q.items).toHaveLength(1);
   });
 

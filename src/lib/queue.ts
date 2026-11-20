@@ -19,7 +19,7 @@ import { memoryFileStore, restoreRef, type AttachmentRef, type FileStore } from 
 import { isAreaName, isTaskId } from './parse';
 import { AnswerLost, HubRefused, Unpaired, Unreachable, type DataSource } from './source';
 import type { Op } from './types';
-import { STATUSES } from './types';
+import { POINT_STATES, STATUSES } from './types';
 
 export type { FlushReport, PendingState, QueueStore };
 
@@ -59,6 +59,15 @@ function validOp(value: unknown): value is QueueOp {
       return isTaskId(op['id']) && typeof op['question'] === 'string' && Number.isInteger(op['option']) && ifMatch;
     case 'done':
       return isTaskId(op['id']) && typeof op['confirm'] === 'string';
+    case 'node_set':
+      return (
+        isTaskId(op['id']) &&
+        typeof op['point'] === 'string' &&
+        /^[A-Za-z0-9._-]{1,64}$/.test(op['point']) &&
+        (POINT_STATES as readonly unknown[]).includes(op['state']) &&
+        (op['reason'] === undefined || (typeof op['reason'] === 'string' && op['reason'].length <= 500)) &&
+        ifMatch
+      );
     case 'upload':
       return isTaskId(op['id']) && restoreRef(op['file']) !== null;
     default:
@@ -68,11 +77,11 @@ function validOp(value: unknown): value is QueueOp {
 
 /** A change of a task is queued only with the version the person saw (MOB-08); a new task and finishing need none. */
 function needsIfMatch(op: QueueOp): boolean {
-  return op.op === 'set' || op.op === 'answer';
+  return op.op === 'set' || op.op === 'answer' || op.op === 'node_set';
 }
 
 function ifMatchOf(op: QueueOp): string | undefined {
-  return op.op === 'set' || op.op === 'answer' ? op.if_match : undefined;
+  return op.op === 'set' || op.op === 'answer' || op.op === 'node_set' ? op.if_match : undefined;
 }
 
 /**

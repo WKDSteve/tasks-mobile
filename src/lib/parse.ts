@@ -10,6 +10,10 @@ import type {
   NextPick,
   OpErrorCode,
   OpOutcome,
+  PathBrief,
+  PathDetail,
+  PathPoint,
+  PathProgress,
   Question,
   Status,
   StatusCounts,
@@ -293,6 +297,109 @@ export function taskDetail(doc: unknown, classes: Map<string, DataClass>): TaskD
     bodyTruncated: doc['body_truncated'] === true || rawBody.length > MAX_BODY,
     questions,
   };
+}
+
+/** The longest list of paths and of points of one path taken; the rest is dropped (the hub sends far fewer). */
+export const MAX_PATHS = 200;
+export const MAX_POINTS = 1000;
+
+function count(value: unknown): number {
+  const n = int(value);
+  return n !== null && n >= 0 ? n : 0;
+}
+
+function progress(value: unknown): PathProgress {
+  const p = isObj(value) ? value : {};
+  return {
+    learned: count(p['learned']),
+    seen: count(p['seen']),
+    dropped: count(p['dropped']),
+    open: count(p['open']),
+    blocked: count(p['blocked']),
+    total: count(p['total']),
+  };
+}
+
+/** A path of the list; null when it is no path of a shown area (the hub cut already; the page checks again). */
+export function pathBrief(value: unknown, classes: Map<string, DataClass>): PathBrief | null {
+  if (!isObj(value)) return null;
+  const id = value['id'];
+  const area = value['area'];
+  const title = str(value['title']);
+  if (!isTaskId(id) || !isAreaName(area) || id.split('/')[0] !== area || title === null) return null;
+  if (!shownClass(classes.get(area) ?? 'unclassified')) return null;
+  const icon = isObj(value['icon']) && value['icon']['kind'] === 'emoji' ? str(value['icon']['value'], 16) : null;
+  const xp = isObj(value['xp']) ? { earned: count(value['xp']['earned']), possible: count(value['xp']['possible']) } : null;
+  const level =
+    isObj(value['level']) && int(value['level']['level']) !== null
+      ? { level: count(value['level']['level']), name: str(value['level']['name'], 80) ?? '' }
+      : null;
+  return {
+    id,
+    area,
+    title,
+    status: str(value['status'], 20) ?? '',
+    summary: str(value['summary']) ?? '',
+    icon,
+    progress: progress(value['progress']),
+    xp: xp && xp.possible > 0 ? xp : null,
+    level,
+    etag: str(value['etag'], 200),
+  };
+}
+
+/** `tasks.paths` as the hub cut it for this phone; `partial`: some could not be read on the PC. */
+export function pathList(doc: unknown, classes: Map<string, DataClass>): { paths: PathBrief[]; partial: boolean } {
+  if (!isObj(doc) || doc['kind'] !== 'tasks.paths' || !Array.isArray(doc['items'])) throw new ShapeError('paths');
+  const paths = doc['items']
+    .slice(0, MAX_PATHS)
+    .map((item) => pathBrief(item, classes))
+    .filter((p): p is PathBrief => p !== null);
+  return { paths, partial: doc['partial'] === true };
+}
+
+/** A web address of a point, or null: the phone opens nothing else. */
+function webLink(value: unknown): string | null {
+  const link = str(value, 2000);
+  return link !== null && (link.startsWith('https://') || link.startsWith('http://')) ? link : null;
+}
+
+function pathPoint(value: unknown): PathPoint | null {
+  if (!isObj(value)) return null;
+  const index = int(value['index']);
+  const key = str(value['key'], 64);
+  if (index === null || key === null || key === '') return null;
+  const promoted = value['promoted'];
+  return {
+    index,
+    key,
+    parent: int(value['parent']),
+    depth: count(value['depth']),
+    state: str(value['state'], 20) ?? 'open',
+    derived: str(value['derived'], 20) ?? str(value['state'], 20) ?? 'open',
+    children: count(value['children']),
+    label: str(value['label'], 1000) ?? key,
+    note: str(value['note'], 4000),
+    reason: str(value['reason']),
+    link: webLink(value['link']),
+    promoted: isTaskId(promoted) ? promoted : null,
+    xp: int(value['xp']),
+  };
+}
+
+/** `tasks.path` as the hub cut it; a path of an area this phone does not show is refused. */
+export function pathDetail(doc: unknown, classes: Map<string, DataClass>): PathDetail {
+  if (!isObj(doc) || doc['kind'] !== 'tasks.path') throw new ShapeError('path');
+  const path = pathBrief(doc['path'], classes);
+  if (path === null) throw new ShapeError('path of a hidden area');
+  const points = Array.isArray(doc['nodes'])
+    ? doc['nodes']
+        .slice(0, MAX_POINTS)
+        .map(pathPoint)
+        .filter((p): p is PathPoint => p !== null)
+    : [];
+  const rawBody = typeof doc['body'] === 'string' ? doc['body'] : '';
+  return { path, body: rawBody.slice(0, MAX_BODY), points };
 }
 
 export const OP_ERROR_CODES: readonly OpErrorCode[] = [

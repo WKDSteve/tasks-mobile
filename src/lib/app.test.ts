@@ -64,6 +64,8 @@ function sourceFor(fake: FakeSource, dead: Set<string | null>): (token: string |
       testingStart: (id, confirm) => gate(() => fake.testingStart(id, confirm)),
       vault: () => gate(() => fake.vault()),
       task: (id) => gate(() => fake.task(id)),
+      paths: () => gate(() => fake.paths()),
+      path: (id) => gate(() => fake.path(id)),
       write: (id, op) => gate(() => fake.write(id, op)),
       donePreview: (id) => gate(() => fake.donePreview(id)),
       upload: (id, file, name) => gate(() => fake.upload(id, file, name)),
@@ -167,6 +169,32 @@ describe('App on the synthetic vault', () => {
     await app.setStatus(task, 'blocked');
     expect(fake.writes[0]?.op).toEqual({ op: 'set', id: task.id, patch: { status: 'blocked' }, if_match: 'e1' });
     expect(app.detail?.task.status).toBe('blocked');
+  });
+
+  it('lists the learning paths of the shown areas and ticks a point with the version it read', async () => {
+    const fake = new FakeSource();
+    const app = new App(deps(fake));
+    await app.start(null);
+    await app.openPaths();
+    expect(app.screen).toBe('paths');
+    expect(app.paths?.map((p) => p.id)).toEqual(['garden/lernpfad-rust']);
+    await app.openPath(app.paths![0]!);
+    expect(app.pathView?.points.map((p) => p.key)).toEqual(['basics', 'book', 'rustlings', 'async']);
+    const book = app.pathView!.points[1]!;
+    await app.tickPoint(book, 'learned');
+    expect(fake.writes[0]?.op).toEqual({ op: 'node_set', id: 'garden/lernpfad-rust', point: 'book', state: 'learned', if_match: 'e1' });
+    expect(app.pathView?.points[1]?.state).toBe('learned');
+    await app.tickPoint(app.pathView!.points[2]!, 'seen', '  kenne ich  ');
+    expect(fake.writes[1]?.op).toEqual({
+      op: 'node_set',
+      id: 'garden/lernpfad-rust',
+      point: 'rustlings',
+      state: 'seen',
+      reason: 'kenne ich',
+      if_match: 'e2',
+    });
+    // Both leaves below Grundlagen are closed: the engine's state of the point above follows.
+    expect(app.pathView?.points[0]?.derived).toBe('learned');
   });
 
   it('sends no change of a task whose version it does not know, and says so (MOB-08)', async () => {

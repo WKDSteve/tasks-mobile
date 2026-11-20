@@ -25,6 +25,8 @@
         return t('queue.op.answer', { label });
       case 'done':
         return t('queue.op.done', { label });
+      case 'node_set':
+        return t('queue.op.node_set', { label, state: t(`point.${item.op.state}` as TextKey) });
     }
   }
 </script>

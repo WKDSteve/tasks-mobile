@@ -20,7 +20,8 @@ Done in tasks-desktop (its `mobile.lock`, `tools/build-mobile.py`, `crates/tasks
   it does not need `Service-Worker-Allowed`.
 - The routes the page uses: `GET /api/tasks/hello`, `/api/tasks/areas`, `/api/tasks/snapshot`, `/api/tasks/next`,
   `/api/tasks/task`, `/api/tasks/done_preview`, `/api/tasks/device` (the level of this device now; a hub without it
-  leaves the page at read, create and change), `/api/tasks/testing_sheets`, `/api/tasks/testing_run`;
+  leaves the page at read, create and change), `/api/tasks/testing_sheets`, `/api/tasks/testing_run`,
+  `/api/tasks/paths`, `/api/tasks/path` (the learning paths, cut by the hub; a point is ticked with `node_set`);
   `POST /api/tasks/ops` (one operation per request), `POST /api/tasks/testing_start` (with `x-device-confirm`, the
   device's confirmation of that very request), `POST /api/tasks/upload?id=` (a file of a captured task, after the
   `new`; the body is the file, `X-Upload-Name` its name), `POST /auth/exchange`.

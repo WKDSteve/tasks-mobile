@@ -18,6 +18,7 @@ export function rightFor(op: Op): Right {
       return 'create';
     case 'set':
     case 'done':
+    case 'node_set':
       return 'change';
   }
 }

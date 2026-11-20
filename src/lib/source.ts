@@ -4,7 +4,7 @@
 
 import type { PushSubscriptionBody } from './push';
 import type { Right } from './rights';
-import type { ConfirmRequest, DonePreview, HubHello, Op, OpOutcome, TaskDetail, TestingRun, VaultView } from './types';
+import type { ConfirmRequest, DonePreview, HubHello, Op, OpOutcome, PathBrief, PathDetail, TaskDetail, TestingRun, VaultView } from './types';
 
 /** The hub could not be reached at all (no tunnel, no network): the page is offline, the write waits. */
 export class Unreachable extends Error {
@@ -54,6 +54,10 @@ export interface DataSource {
   /** The vault, cut to the areas this phone may show. */
   vault(): Promise<VaultView>;
   task(id: string): Promise<TaskDetail>;
+  /** The learning paths of the areas this phone may show; `partial`: some could not be read on the PC. */
+  paths(): Promise<{ paths: PathBrief[]; partial: boolean }>;
+  /** One learning path with its points. */
+  path(id: string): Promise<PathDetail>;
   /** One operation, one request: its own `client_op_id`, so the hub can tell a repeat. */
   write(clientOpId: string, op: Op): Promise<OpOutcome>;
   donePreview(id: string): Promise<DonePreview>;

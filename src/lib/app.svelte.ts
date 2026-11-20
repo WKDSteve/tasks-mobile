@@ -12,11 +12,11 @@ import type { KeptView } from './storage';
 import { isFresh } from './storage';
 import { localDay } from './today';
 import type { CacheStore } from 'appkit-ui/cache';
-import type { ConfirmRequest, DonePreview, Op, Status, TaskBrief, TaskDetail, TestingRun, VaultView } from './types';
+import type { ConfirmRequest, DonePreview, Op, PathBrief, PathDetail, PathPoint, PointState, Status, TaskBrief, TaskDetail, TestingRun, VaultView } from './types';
 import type { TextKey } from './i18n';
 import type { Shared } from './share';
 
-export type Screen = 'pair' | 'today' | 'list' | 'capture' | 'queue' | 'task';
+export type Screen = 'pair' | 'today' | 'list' | 'capture' | 'queue' | 'task' | 'paths' | 'path';
 export type Connection = 'checking' | 'live' | 'offline';
 
 export interface AppDeps {
@@ -442,6 +442,75 @@ export class App {
 
   /** The screen a task was opened from ("Today" or the list): "back" and a finish go there. */
   returnTo = $state<'today' | 'list'>('list');
+
+  /** The learning paths of the shown areas, as last read (not kept on the phone: they are read when the list opens). */
+  paths = $state<PathBrief[] | null>(null);
+  /** Some paths could not be read on the PC: the list is a part (MOB-08). */
+  pathsPartial = $state(false);
+  /** The path opened, and its points once read. */
+  openedPath = $state<PathBrief | null>(null);
+  pathView = $state<PathDetail | null>(null);
+
+  /** The list of the learning paths, read now (only with the hub there). */
+  async openPaths(): Promise<void> {
+    this.screen = 'paths';
+    if (!this.source || this.connection !== 'live') return;
+    try {
+      const read = await this.source.paths();
+      this.paths = read.paths;
+      this.pathsPartial = read.partial;
+    } catch (error) {
+      this.failed(error);
+    }
+  }
+
+  async openPath(brief: PathBrief): Promise<void> {
+    this.openedPath = brief;
+    this.pathView = null;
+    this.screen = 'path';
+    await this.readPath();
+  }
+
+  private async readPath(): Promise<void> {
+    const brief = this.openedPath;
+    if (!brief || !this.source || this.connection !== 'live') return;
+    try {
+      const detail = await this.source.path(brief.id);
+      // Another path was opened while this one was read: it keeps its own.
+      if (this.openedPath?.id !== brief.id) return;
+      this.pathView = detail;
+      this.openedPath = detail.path;
+    } catch (error) {
+      if (this.openedPath?.id === brief.id) this.failed(error);
+    }
+  }
+
+  /**
+   * Tick a point of the opened path (`node_set`, the version seen: MOB-08), or open it again. Seen and dropped need a
+   * reason (the engine refuses them without). Through the queue like every write; the path is shown again only as the
+   * hub answers (MOB-07).
+   */
+  async tickPoint(point: PathPoint, state: PointState, reason?: string): Promise<void> {
+    const path = this.pathView?.path;
+    if (!path) return;
+    const why = reason?.trim();
+    const op: Op = {
+      op: 'node_set',
+      id: path.id,
+      point: point.key,
+      state,
+      ...(why ? { reason: why.slice(0, 500) } : {}),
+      ...(path.etag ? { if_match: path.etag } : {}),
+    };
+    this.busy = true;
+    try {
+      const item = await this.enqueue(op, path.area, `${path.title}: ${point.label}`.slice(0, 200));
+      await this.readPath();
+      this.sayConflict(item);
+    } finally {
+      this.busy = false;
+    }
+  }
 
   async openTask(brief: TaskBrief): Promise<void> {
     if (this.screen === 'today' || this.screen === 'list') this.returnTo = this.screen;

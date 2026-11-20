@@ -83,12 +83,71 @@ export interface TaskDetail {
   questions: Question[];
 }
 
+/** How a learning point is closed, or open again: what a phone may set (`node_set`; blocked is the PC's). */
+export type PointState = 'open' | 'learned' | 'seen' | 'dropped';
+export const POINT_STATES: readonly PointState[] = ['open', 'learned', 'seen', 'dropped'];
+
+/** The progress of a path or a point, over its leaves (the engine counts; the page shows). */
+export interface PathProgress {
+  learned: number;
+  seen: number;
+  dropped: number;
+  open: number;
+  blocked: number;
+  total: number;
+}
+
+/** A learning path as the list shows it (the hub's cut, `tasks.paths`). */
+export interface PathBrief {
+  id: string;
+  area: string;
+  title: string;
+  status: string;
+  summary: string;
+  /** An emoji of the path; a file is never shown on the phone. */
+  icon: string | null;
+  progress: PathProgress;
+  /** XP earned of the possible ones, when the path carries XP. */
+  xp: { earned: number; possible: number } | null;
+  /** The level reached, when the path has levels. */
+  level: { level: number; name: string } | null;
+  /** The version the page saw; a tick goes out with it (MOB-08). */
+  etag: string | null;
+}
+
+/** One point of the tree of a path (`tasks.path`, cut by the hub). Label, note and reason are untrusted text. */
+export interface PathPoint {
+  index: number;
+  key: string;
+  parent: number | null;
+  depth: number;
+  /** Its own mark (`state`) and, for a point with children, the one from its leaves (`derived`). */
+  state: string;
+  derived: string;
+  children: number;
+  label: string;
+  note: string | null;
+  reason: string | null;
+  /** A web address only (`http`, `https`): the hub drops any other. */
+  link: string | null;
+  /** The task the point was made into. */
+  promoted: string | null;
+  xp: number | null;
+}
+
+export interface PathDetail {
+  path: PathBrief;
+  body: string;
+  points: PathPoint[];
+}
+
 /** The operations this page sends. The engine checks every one of them. */
 export type Op =
   | { op: 'new'; area: string; title: string; body?: string }
   | { op: 'set'; id: string; patch: { status: Status }; if_match?: string }
   | { op: 'answer'; id: string; question: string; option: number; if_match?: string }
-  | { op: 'done'; id: string; confirm: string };
+  | { op: 'done'; id: string; confirm: string }
+  | { op: 'node_set'; id: string; point: string; state: PointState; reason?: string; if_match?: string };
 
 export type OpErrorCode =
   | 'invalid_argument'

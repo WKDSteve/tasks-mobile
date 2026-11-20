@@ -6,11 +6,11 @@
 //
 // The names are neutral (APP-01): nothing here is a real area or a real task.
 
-import { areaClasses, deviceLevel, donePreview, hubHello, testingRun, testingSheets, opOutcome, taskDetail, vaultView } from './parse';
+import { areaClasses, deviceLevel, donePreview, hubHello, testingRun, testingSheets, opOutcome, pathDetail, pathList, taskDetail, vaultView } from './parse';
 import { AnswerLost, HubRefused, Unreachable, type DataSource } from './source';
 import type { PushSubscriptionBody } from './push';
 import type { Right } from './rights';
-import type { ConfirmRequest, DataClass, DonePreview, HubHello, Op, OpOutcome, TaskDetail, TestingRun, VaultView } from './types';
+import type { ConfirmRequest, DataClass, DonePreview, HubHello, Op, OpOutcome, PathBrief, PathDetail, TaskDetail, TestingRun, VaultView } from './types';
 
 interface FakeTask {
   id: string;
@@ -141,6 +141,44 @@ const CLASSES: Record<string, DataClass | undefined> = {
   loose: undefined,
 };
 
+/** A learning point of the fake vault: `parent` is the index (1-based) of the point above it. */
+interface FakePoint {
+  key: string;
+  label: string;
+  parent?: number;
+  link?: string;
+  note?: string;
+  state: string;
+  reason?: string;
+}
+
+interface FakePath {
+  id: string;
+  area: string;
+  title: string;
+  etag: number;
+  points: FakePoint[];
+}
+
+function initialPaths(): FakePath[] {
+  return [
+    {
+      id: 'garden/lernpfad-rust',
+      area: 'garden',
+      title: 'Rust lernen',
+      etag: 1,
+      points: [
+        { key: 'basics', label: 'Grundlagen', state: 'open' },
+        { key: 'book', label: 'The Book lesen', parent: 1, link: 'https://doc.rust-lang.org/book/', note: 'Kapitel 1 bis 4', state: 'open' },
+        { key: 'rustlings', label: 'Rustlings', parent: 1, state: 'open' },
+        { key: 'async', label: 'Async verstehen', state: 'open' },
+      ],
+    },
+  ];
+}
+
+const CLOSED = new Set(['learned', 'seen', 'dropped']);
+
 function slugOf(title: string): string {
   return (
     title
@@ -179,6 +217,7 @@ export class FakeSource implements DataSource, FakeControls {
   /** The subscription the fake hub keeps for this device (Web Push), or `null`. */
   pushed: PushSubscriptionBody | null = null;
   private tasks = initialTasks();
+  private learning = initialPaths();
   private rev = 1;
   private seen = new Map<string, OpOutcome>();
 
@@ -364,6 +403,73 @@ export class FakeSource implements DataSource, FakeControls {
     return taskDetail(doc, this.classes());
   }
 
+  /** The leaves below point `index` (1-based), or the point itself when it has none. */
+  private leaves(p: FakePath, index: number): FakePoint[] {
+    const kids = p.points.map((pt, i) => ({ pt, i: i + 1 })).filter((x) => x.pt.parent === index);
+    const self = p.points[index - 1];
+    if (kids.length === 0) return self ? [self] : [];
+    return kids.flatMap((k) => this.leaves(p, k.i));
+  }
+
+  private progressOf(points: FakePoint[]): Record<string, number> {
+    const n = (s: string) => points.filter((x) => x.state === s).length;
+    return { learned: n('learned'), seen: n('seen'), dropped: n('dropped'), open: n('open'), blocked: 0, total: points.length };
+  }
+
+  private pathEntry(p: FakePath): Record<string, unknown> {
+    const leaves = p.points.filter((_, i) => !p.points.some((x) => x.parent === i + 1));
+    return {
+      id: p.id,
+      area: p.area,
+      slug: p.id.split('/')[1],
+      title: p.title,
+      status: 'doing',
+      summary: 'Ein Lernpfad des Test-Vaults',
+      icon: { kind: 'emoji', value: '🦀' },
+      progress: this.progressOf(leaves),
+      etag: `e${p.etag}`,
+    };
+  }
+
+  async paths(): Promise<{ paths: PathBrief[]; partial: boolean }> {
+    this.reachable();
+    const doc = {
+      ...HEAD,
+      kind: 'tasks.paths',
+      items: [...this.learning.map((p) => this.pathEntry(p)), { id: 'vault-secret/lernpfad', area: 'vault-secret', title: 'SECRET-MARKER' }],
+      partial: false,
+    };
+    return pathList(doc, this.classes());
+  }
+
+  async path(id: string): Promise<PathDetail> {
+    this.reachable();
+    const p = this.learning.find((x) => x.id === id);
+    if (!p) throw new HubRefused(404, 'not_found', `no such path: ${id}`);
+    const nodes = p.points.map((pt, i) => {
+      const index = i + 1;
+      const below = this.leaves(p, index);
+      const children = p.points.filter((x) => x.parent === index).length;
+      let depth = 0;
+      for (let up = pt.parent; up !== undefined; up = p.points[up - 1]?.parent) depth += 1;
+      return {
+        index,
+        key: pt.key,
+        ...(pt.parent !== undefined ? { parent: pt.parent } : {}),
+        depth,
+        state: pt.state,
+        derived: children > 0 ? (below.every((x) => CLOSED.has(x.state)) ? 'learned' : 'open') : pt.state,
+        children,
+        label: pt.label,
+        progress: this.progressOf(below),
+        ...(pt.link ? { link: pt.link } : {}),
+        ...(pt.note ? { note: pt.note } : {}),
+        ...(pt.reason ? { reason: pt.reason } : {}),
+      };
+    });
+    return pathDetail({ ...HEAD, kind: 'tasks.path', path: this.pathEntry(p), body: 'Vom Einstieg bis Async.', nodes }, this.classes());
+  }
+
   private result(ok: boolean, id: string | null, error?: { code: string; message: string }): unknown {
     return {
       ...HEAD,
@@ -376,6 +482,20 @@ export class FakeSource implements DataSource, FakeControls {
   }
 
   private apply(op: Op): unknown {
+    if (op.op === 'node_set') {
+      const p = this.learning.find((x) => x.id === op.id);
+      const pt = p?.points.find((x) => x.key === op.point);
+      if (!p || !pt) return this.result(false, null, { code: 'not_found', message: 'no such point' });
+      if (op.if_match !== undefined && op.if_match !== `e${p.etag}`)
+        return this.result(false, p.id, { code: 'conflict', message: 'the file changed since it was read' });
+      if ((op.state === 'seen' || op.state === 'dropped') && !op.reason)
+        return this.result(false, p.id, { code: 'invalid_argument', message: 'node_set: seen and dropped need a reason' });
+      pt.state = op.state;
+      if (op.reason) pt.reason = op.reason;
+      else delete pt.reason;
+      p.etag += 1;
+      return this.result(true, p.id);
+    }
     if (op.op === 'new') {
       if (CLASSES[op.area] !== 'public' && CLASSES[op.area] !== 'internal')
         return this.result(false, null, { code: 'forbidden', message: 'area not open to this device' });

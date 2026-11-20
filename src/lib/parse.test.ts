@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { areaClasses, dataClassOf, deviceLevel, testingSheets, donePreview, ExportClassError, isTaskId, MAX_NEXT, nextPicks, opOutcome, phoneExport, ShapeError, statusCounts, taskBrief, taskDetail, testingRun, vaultView } from './parse';
+import { areaClasses, dataClassOf, deviceLevel, testingSheets, donePreview, ExportClassError, isTaskId, MAX_NEXT, nextPicks, opOutcome, pathDetail, pathList, phoneExport, ShapeError, statusCounts, taskBrief, taskDetail, testingRun, vaultView } from './parse';
 
 const classes = new Map([
   ['garden', 'public' as const],
@@ -251,5 +251,58 @@ describe('the test sheets of a task', () => {
       sheetsRed: null,
     });
     expect(run({ block: { written: 'yes', outcome: 'changed' } })).toMatchObject({ block: null });
+  });
+});
+
+describe('learning paths (the hub cut them; the page checks again)', () => {
+  const entry = (id: string, area: string, more: Record<string, unknown> = {}) => ({
+    id, area, title: `Path ${id}`, status: 'doing', progress: { learned: 1, total: 3 }, etag: 'e1', ...more,
+  });
+
+  it('keeps the paths of shown areas, an emoji only as icon, and says when the list is a part', () => {
+    const { paths, partial } = pathList(
+      {
+        kind: 'tasks.paths',
+        items: [
+          entry('garden/rust', 'garden', { icon: { kind: 'emoji', value: '🦀' }, xp: { earned: 10, possible: 40 } }),
+          entry('kitchen/lua', 'kitchen', { icon: { kind: 'asset', value: 'assets/i.svg' } }),
+          entry('secret/x', 'secret'),
+          entry('loose/y', 'loose'),
+          entry('garden/z', 'kitchen'),
+          { id: 'not an id', area: 'garden', title: 'x' },
+        ],
+        partial: true,
+      },
+      classes,
+    );
+    expect(paths.map((p) => p.id)).toEqual(['garden/rust', 'kitchen/lua']);
+    expect(paths[0]?.icon).toBe('🦀');
+    expect(paths[0]?.xp).toEqual({ earned: 10, possible: 40 });
+    expect(paths[1]?.icon).toBeNull();
+    expect(paths[0]?.progress).toEqual({ learned: 1, seen: 0, dropped: 0, open: 0, blocked: 0, total: 3 });
+    expect(partial).toBe(true);
+    expect(() => pathList({ kind: 'tasks.snapshot' }, classes)).toThrow(ShapeError);
+  });
+
+  it('reads the points of a path, a link only as a web address, and refuses a path of a hidden area', () => {
+    const doc = {
+      kind: 'tasks.path',
+      path: entry('kitchen/lua', 'kitchen'),
+      body: 'Text',
+      nodes: [
+        { index: 1, key: 'a', depth: 0, state: 'open', derived: 'learned', children: 1, label: 'A' },
+        { index: 2, key: 'b', parent: 1, depth: 1, state: 'learned', label: 'B', link: 'https://example.org', promoted: 'kitchen/t' },
+        { index: 3, key: 'c', parent: 1, depth: 1, state: 'seen', label: 'C', link: 'javascript:alert(1)', reason: 'kenne ich' },
+        { index: 4, key: '', label: 'no key' },
+      ],
+    };
+    const d = pathDetail(doc, classes);
+    expect(d.points.map((p) => p.key)).toEqual(['a', 'b', 'c']);
+    expect(d.points[1]?.link).toBe('https://example.org');
+    expect(d.points[1]?.promoted).toBe('kitchen/t');
+    expect(d.points[2]?.link).toBeNull();
+    expect(d.points[2]?.reason).toBe('kenne ich');
+    expect(d.points[0]?.derived).toBe('learned');
+    expect(() => pathDetail({ ...doc, path: entry('secret/x', 'secret') }, classes)).toThrow(ShapeError);
   });
 });
