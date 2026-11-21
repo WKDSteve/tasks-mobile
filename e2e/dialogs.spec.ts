@@ -24,12 +24,33 @@ async function openRunConfirm(page: Page): Promise<void> {
   await expect(page.getByTestId('run-confirm')).toBeVisible();
 }
 
+async function openForgetConfirm(page: Page): Promise<void> {
+  await open(page);
+  await fakeHub(page, { offline: true });
+  await page.getByRole('button', { name: 'New', exact: true }).click();
+  await page.getByLabel('Title').fill('Kept while the dialog is open');
+  await page.getByRole('button', { name: 'Create' }).click();
+  await page.getByRole('button', { name: /Waiting/ }).click();
+  await page.getByRole('button', { name: 'Disconnect and delete the data' }).click();
+  await expect(page.getByTestId('forget-confirm')).toBeVisible();
+}
+
 const starts = (page: Page) =>
   page.evaluate(() => (window as unknown as { __fakeHub: { testingStarts: unknown[] } }).__fakeHub.testingStarts);
 
-for (const [name, show, id] of [
-  ['the finish preview', openDonePreview, 'done-preview'],
-  ['the run confirmation', openRunConfirm, 'run-confirm'],
+// What is still there after a close request: the task page, or the waiting write that disconnecting would delete.
+const stays = {
+  task: async (page: Page) => {
+    await expect(page.getByTestId('task-title')).toBeVisible();
+    await expect(page.getByTestId('notice')).toHaveCount(0);
+  },
+  queue: (page: Page) => expect(page.getByTestId('queue-count')).toHaveText('1'),
+};
+
+for (const [name, show, id, still] of [
+  ['the finish preview', openDonePreview, 'done-preview', stays.task],
+  ['the run confirmation', openRunConfirm, 'run-confirm', stays.task],
+  ['the disconnect confirmation', openForgetConfirm, 'forget-confirm', stays.queue],
 ] as const) {
   test(`${name} is a modal dialog that only a close request or its buttons close`, async ({ page }) => {
     await show(page);
@@ -47,8 +68,7 @@ for (const [name, show, id] of [
     await page.keyboard.press('Escape');
     await expect(dialog).toHaveCount(0);
     expect(await starts(page)).toEqual([]);
-    await expect(page.getByTestId('task-title')).toBeVisible();
-    await expect(page.getByTestId('notice')).toHaveCount(0);
+    await still(page);
   });
 
   test(`${name} closes on a close request like the back gesture (requestClose)`, async ({ page }) => {
@@ -57,7 +77,7 @@ for (const [name, show, id] of [
     await dialog.evaluate((el) => (el as HTMLDialogElement).requestClose());
     await expect(dialog).toHaveCount(0);
     expect(await starts(page)).toEqual([]);
-    await expect(page.getByTestId('notice')).toHaveCount(0);
+    await still(page);
   });
 
   for (const scheme of ['light', 'dark'] as const) {

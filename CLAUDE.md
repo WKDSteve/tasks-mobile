@@ -44,8 +44,8 @@ node --check public/sw.js
   (siehe Fallen).
 - Regeln: das private Regelwerk des Maintainers für Web und PWA (hier nicht mit Namen oder ID genannt).
 - Bestätigungen sind native `<dialog>`: `use:modal` aus `src/lib/modal.ts` (`showModal()`, `closedby` nie `any`), der Zustand
-  folgt dem `close`-Event; keine eigene Fokusfalle, keine eigene Esc-Logik. Bekannter Fund (offen): `Queue.svelte` hat
-  noch ein eigenes `div[role=alertdialog]` (`forget-confirm`).
+  folgt dem `close`-Event; keine eigene Fokusfalle, keine eigene Esc-Logik. Auch die Rückfrage zum Trennen (`forget-confirm` in
+  `Queue.svelte`) ist ein solcher Dialog, `e2e/dialogs.spec.ts` prüft alle drei.
 - `legacy-scan` läuft über den Lockfile (exakte devDependency, es gilt die Quarantäne aus `pnpm-workspace.yaml`):
   `DISABLE_TELEMETRY=1 pnpm exec modern-web-guidance legacy-scan src --json`; die CI führt ihn als Hinweis aus.
   `.claude/settings.json` schaltet die Telemetrie ab und erlaubt nur `npx -y modern-web-guidance@latest *`.

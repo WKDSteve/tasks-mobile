@@ -5,6 +5,7 @@
   import type { App } from '../lib/app.svelte';
   import { reason, type Translate, type TextKey } from '../lib/i18n';
   import type { Pending } from '../lib/queue';
+  import { modal } from '../lib/modal';
   import ExportPick from './ExportPick.svelte';
 
   let { app, t }: { app: App; t: Translate } = $props();
@@ -95,20 +96,31 @@
 </section>
 
 <section class="forget">
+  <button onclick={() => (forgetting = true)}>{t('pair.forget')}</button>
   {#if forgetting}
-    <div role="alertdialog" aria-labelledby="forget-text" data-testid="forget-confirm">
+    <!-- Esc and the back gesture close it as "cancel": nothing is deleted. Cancel is first, so the modal focuses it. -->
+    <dialog class="confirm" aria-labelledby="forget-text" data-testid="forget-confirm" use:modal onclose={() => (forgetting = false)}>
       <p id="forget-text">{t('pair.forget_confirm')}</p>
       <div class="actions">
-        <button class="primary" onclick={() => { forgetting = false; void app.forget(); }}>{t('pair.forget')}</button>
         <button onclick={() => (forgetting = false)}>{t('task.cancel')}</button>
+        <button class="primary" onclick={() => { forgetting = false; void app.forget(); }}>{t('pair.forget')}</button>
       </div>
-    </div>
-  {:else}
-    <button onclick={() => (forgetting = true)}>{t('pair.forget')}</button>
+    </dialog>
   {/if}
 </section>
 
 <style>
+  .confirm {
+    width: min(92vw, 28rem);
+    padding: 12px;
+    border: 2px solid var(--accent);
+    border-radius: 12px;
+    background: var(--surface);
+    color: var(--text);
+  }
+  .confirm::backdrop {
+    background: rgb(0 0 0 / 0.5);
+  }
   .push h2 {
     font-size: 1rem;
     margin: 0 0 4px;
