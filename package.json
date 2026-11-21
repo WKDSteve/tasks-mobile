@@ -14,6 +14,9 @@
     "e2e": "pnpm build && pnpm build:fake && playwright test",
     "lint:chars": "python tools/check-control-chars.py"
   },
+  "browserslist": [
+    "baseline widely available"
+  ],
   "devDependencies": {
     "@axe-core/playwright": "^4.13.0",
     "@playwright/test": "^1.63.0",
