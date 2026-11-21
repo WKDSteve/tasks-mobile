@@ -4,6 +4,7 @@
   import { untrack } from 'svelte';
   import { markHidden } from 'appkit-ui/text';
   import type { App } from '../lib/app.svelte';
+  import { modal } from '../lib/modal';
   import type { Translate, TextKey } from '../lib/i18n';
   import { SETTABLE, type Status } from '../lib/types';
 
@@ -57,7 +58,8 @@
     {/if}
 
     {#if app.preview}
-      <div class="confirm" role="dialog" aria-labelledby="done-title" data-testid="done-preview">
+      <!-- Esc and the back gesture close it as "cancel": the preview is dropped, nothing is finished. -->
+      <dialog class="confirm" aria-labelledby="done-title" data-testid="done-preview" use:modal onclose={() => (app.preview = null)}>
         <h3 id="done-title">{t('task.done_title')}</h3>
         {#if app.preview.already}
           <p>{t('task.done_already')}</p>
@@ -67,12 +69,13 @@
         {#if app.preview.freed.length > 0}<p>{t('task.done_frees', { n: app.preview.freed.length })}</p>{/if}
         {#if app.preview.nextDue}<p>{t('task.done_next', { day: app.preview.nextDue })}</p>{/if}
         <div class="actions">
+          <!-- Cancel first: the modal focuses the first control, and that is the safe one. -->
+          <button onclick={() => (app.preview = null)}>{t('task.cancel')}</button>
           {#if app.preview.confirm && !app.preview.already}
             <button class="primary" onclick={() => void app.finish(task)}>{t('task.done_confirm')}</button>
           {/if}
-          <button onclick={() => (app.preview = null)}>{t('task.cancel')}</button>
         </div>
-      </div>
+      </dialog>
     {/if}
 
     {#if app.sheets !== null || app.sheetsProblem !== null}
@@ -108,13 +111,13 @@
           {:else if !app.confirmable}
             <p class="muted" data-testid="no-key">{t('testing.no_key')}</p>
           {:else if askRun}
-            <div class="confirm" role="dialog" aria-labelledby="run-title" data-testid="run-confirm">
+            <dialog class="confirm" aria-labelledby="run-title" data-testid="run-confirm" use:modal onclose={() => (askRun = false)}>
               <p id="run-title">{t('testing.confirm')}</p>
               <div class="actions">
-                <button class="primary" disabled={app.busy} onclick={() => { askRun = false; void app.startRun(task); }}>{t('testing.confirm_go')}</button>
                 <button onclick={() => (askRun = false)}>{t('task.cancel')}</button>
+                <button class="primary" disabled={app.busy} onclick={() => { askRun = false; void app.startRun(task); }}>{t('testing.confirm_go')}</button>
               </div>
-            </div>
+            </dialog>
           {:else}
             <p><button disabled={app.busy || (run?.running ?? false)} onclick={() => (askRun = true)}>{t('testing.start')}</button></p>
           {/if}
@@ -161,11 +164,15 @@
     gap: 8px;
   }
   .confirm {
-    margin: 14px 0;
+    width: min(92vw, 28rem);
     padding: 12px;
     border: 2px solid var(--accent);
     border-radius: 12px;
     background: var(--surface);
+    color: var(--text);
+  }
+  .confirm::backdrop {
+    background: rgb(0 0 0 / 0.5);
   }
   .actions {
     display: flex;

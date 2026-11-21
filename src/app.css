@@ -106,3 +106,13 @@ label {
   overflow-wrap: anywhere;
   white-space: pre-wrap;
 }
+
+/* A modal dialog: scrolling in it or over its backdrop must not scroll the page behind it. */
+dialog:modal {
+  overscroll-behavior: contain;
+}
+
+dialog::backdrop {
+  overflow: hidden;
+  overscroll-behavior: contain;
+}
