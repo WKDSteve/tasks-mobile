@@ -36,7 +36,7 @@ node --check public/sw.js
 
 - Browser Support: Baseline Widely available (`.mwgrc`, `browserslist` in `package.json`). Zielgerät ist Android
   Chrome bzw. System WebView (installierte PWA). Neuere Features nur hinter Feature-Detection mit Fallback;
-  Polyfills nur per dynamischem `import()`. `build.target` in `vite.config.ts` (es2022) bleibt davon unberührt.
+  Polyfills, wo noch genutzte Browser sie brauchen (lieber einer zu viel), laufen nur nach der Prüfung: dynamisch per `import()`, in einer `file://`-Seite mitgebündelt (rules-vault `BASE-02`). `build.target` in `vite.config.ts` (es2022) bleibt davon unberührt.
 - Vor dem Schreiben oder Ändern von HTML, CSS oder Client-JS (`src/`, `public/`, `index.html`) den Skill
   `modern-web-guidance` nutzen (`search` → `retrieve` → prüfen). Nicht für Build-Config, CI oder `tools/`.
 - Für offene Modernisierung: `npx -y modern-web-guidance@latest legacy-scan src --json`, jeden Fund gegen
