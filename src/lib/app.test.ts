@@ -240,12 +240,27 @@ describe('App on the synthetic vault', () => {
     expect(await app.captureMedia({ blob: photo, kind: 'photo' })).toBe(true);
     // The name is made from the local time of the phone.
     const name = fake.uploads[0]?.name ?? '';
-    expect(name).toMatch(/^photo-2026-01-01-[0-9]{4}[.]jpg$/);
+    expect(name).toMatch(/^photo-2026-01-01-[0-9]{4}-[A-Za-z0-9]{6}[.]jpg$/);
     expect(fake.uploads).toEqual([{ id: 'garden/zaun-besprechen', name, type: 'image/jpeg', size: 4, kind: 'image' }]);
     const op = fake.writes[0]?.op;
     expect(op).toMatchObject({ op: 'meeting_capture', id: 'garden/zaun-besprechen', entry: { kind: 'photo', asset: `assets/images/${name}` } });
     expect(app.pending).toEqual([]);
     expect(app.meetingView?.minutes.at(-1)?.text).toBe(`![${name}](assets/images/${name})`);
+  });
+
+  it('two photos of one minute are two files, each with its own line (none is taken for the other sent again)', async () => {
+    const fake = new FakeSource();
+    const app = new App(deps(fake, { fileStore: memoryFileStore() }));
+    await app.start(null);
+    await app.openMeeting(app.meetings!.find((m) => m.id === 'garden/zaun-besprechen')!);
+    expect(await app.captureMedia({ blob: new Blob(['one'], { type: 'image/jpeg' }), kind: 'photo' })).toBe(true);
+    expect(await app.captureMedia({ blob: new Blob(['two'], { type: 'image/jpeg' }), kind: 'photo' })).toBe(true);
+    const names = fake.uploads.map((u) => u.name);
+    expect(names).toHaveLength(2);
+    expect(new Set(names).size).toBe(2);
+    const assets = fake.writes.map((w) => (w.op as { entry: { asset?: string } }).entry.asset);
+    expect(assets).toEqual(names.map((n) => `assets/images/${n}`));
+    expect(app.pending).toEqual([]);
   });
 
   it('a voice note goes into the minutes as audio; a file that is no photo is refused before anything is sent', async () => {

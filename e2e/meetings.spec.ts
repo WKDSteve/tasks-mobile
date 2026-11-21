@@ -45,7 +45,7 @@ test('a photo and a voice note of a meeting go into its minutes', async ({ page 
   await openFence(page);
   await expect(page.getByTestId('meeting-photo-input')).toHaveAttribute('capture', 'environment');
   await page.getByTestId('meeting-photo-input').setInputFiles({ name: 'IMG_0001.png', mimeType: 'image/png', buffer: PNG });
-  await expect(page.getByTestId('minutes')).toContainText(/Photo: photo-\d{4}-\d{2}-\d{2}-\d{4}\.png/);
+  await expect(page.getByTestId('minutes')).toContainText(/Photo: photo-\d{4}-\d{2}-\d{2}-\d{4}-[A-Za-z0-9]{6}\.png/);
   await page.getByTestId('meeting-voice').click();
   await expect(page.getByTestId('meeting-voice-stop')).toContainText('Stop recording');
   await page.waitForTimeout(1200);

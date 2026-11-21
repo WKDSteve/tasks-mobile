@@ -150,7 +150,7 @@ describe('WriteQueue', () => {
     const item = (op: unknown) => ({ clientOpId: 'id-00000077', op, scope: 'garden', label: 'M', queuedAt: '2026-01-01T00:00:00Z', state: 'waiting' });
     const good = { op: 'meeting_capture', id: 'garden/m', entry: { kind: 'photo', asset: 'assets/images/p.jpg' } };
     expect(restore([item(good)], null)).toHaveLength(1);
-    for (const asset of ['assets/audio/p.jpg', 'assets/images/../x.md', 'assets/images/a/b.jpg', '../x.jpg', 'assets/images/', 'assets/images/.p']) {
+    for (const asset of ['assets/audio/p.jpg', 'assets/audio/xp.jpg', 'assets/boards/b.excalidraw', 'assets/images/../x.md', 'assets/images/a/b.jpg', '../x.jpg', 'assets/images/', 'assets/images/.p']) {
       expect(restore([item({ ...good, entry: { kind: 'photo', asset } })], null), asset).toEqual([]);
     }
     expect(restore([item({ ...good, entry: { kind: 'photo', asset: 'assets/images/p.jpg', text: 'x' } })], null)).toEqual([]);

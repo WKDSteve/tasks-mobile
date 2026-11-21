@@ -569,8 +569,11 @@ export class App {
     this.busy = true;
     try {
       const refs = await this.keepFiles([file]);
-      const ref = refs?.[0];
-      if (!ref) return false;
+      const kept = refs?.[0];
+      if (!kept) return false;
+      // A meeting takes many photos and notes, two of them in one minute too: the name carries a part of the key of
+      // its file, so a second one is not taken for the first sent again (`exact=1` would say `exists`).
+      const ref = { ...kept, name: kept.name.replace(/(\.[A-Za-z0-9]+)?$/, (ext) => `-${kept.key.replace(/[^A-Za-z0-9]/g, '').slice(-6)}${ext}`) };
       try {
         await this.queue.addMeetingFile(meeting.id, meeting.area, meeting.title, ref, this.clockNow());
       } catch {
