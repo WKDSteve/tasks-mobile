@@ -36,14 +36,13 @@ node --check public/sw.js
 
 - Browser Support: Baseline Widely available (`.mwgrc`, `browserslist` in `package.json`). Zielgerät ist Android
   Chrome bzw. System WebView (installierte PWA). Neuere Features nur hinter Feature-Detection mit Fallback;
-  Polyfills, wo noch genutzte Browser sie brauchen (lieber einer zu viel), laufen nur nach der Prüfung: dynamisch per `import()`, in einer `file://`-Seite mitgebündelt (rules-vault `BASE-02`). `build.target` in `vite.config.ts` (es2022) bleibt davon unberührt.
+  Polyfills, wo noch genutzte Browser sie brauchen (lieber einer zu viel), laufen nur nach der Prüfung: dynamisch per `import()`, in einer `file://`-Seite mitgebündelt. `build.target` in `vite.config.ts` (es2022) bleibt davon unberührt.
 - Vor dem Schreiben oder Ändern von HTML, CSS oder Client-JS (`src/`, `public/`, `index.html`) den Skill
   `modern-web-guidance` nutzen (`search` → `retrieve` → prüfen). Nicht für Build-Config, CI oder `tools/`.
 - Für offene Modernisierung: `npx -y modern-web-guidance@latest legacy-scan src --json`, jeden Fund gegen
   `keepWhen`/`dropWhen` prüfen. Neues muss unter der CSP aus `tools/csp.mjs` und Trusted Types laufen
   (siehe Fallen).
-- Regeln: rules-vault Ruleset `web`, daneben die PWA-Regeln (`PWA-*`) aus Ruleset `mobile` (plus die App-Regeln
-  `WEB-*` aus Ruleset `native`).
+- Regeln: das private Regelwerk des Maintainers für Web und PWA (hier nicht mit Namen oder ID genannt).
 - Bestätigungen sind native `<dialog>`: `use:modal` aus `src/lib/modal.ts` (`showModal()`, `closedby` nie `any`), der Zustand
   folgt dem `close`-Event; keine eigene Fokusfalle, keine eigene Esc-Logik. Bekannter Fund (offen): `Queue.svelte` hat
   noch ein eigenes `div[role=alertdialog]` (`forget-confirm`).
