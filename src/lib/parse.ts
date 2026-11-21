@@ -17,6 +17,7 @@ import type {
   PathDetail,
   PathPoint,
   PathProgress,
+  RoutineStarted,
   Question,
   Status,
   StatusCounts,
@@ -102,6 +103,9 @@ export function taskBrief(value: unknown): TaskBrief | null {
   // filter of the classes).
   if (!id.startsWith(`${area}/`)) return null;
   const questions = int(value['open_questions']);
+  const step = int(value['repeat_step']);
+  const repeat = routineWord(value['repeat']);
+  const after = str(value['repeat_after'], 200);
   return {
     id,
     area,
@@ -111,8 +115,16 @@ export function taskBrief(value: unknown): TaskBrief | null {
     due: day(value['due']),
     remind: day(value['remind']),
     openQuestions: questions !== null && questions > 0 ? questions : 0,
+    ...(repeat !== null ? { repeat } : {}),
+    ...(step !== null && step >= 1 ? { repeatStep: step } : {}),
+    ...(after !== null ? { repeatAfter: after } : {}),
     etag: str(value['etag'], 200),
   };
+}
+
+/** `repeat`: one interval or a ladder (`1w,4w,12w`), as the engine writes it; anything else is no routine. */
+function routineWord(value: unknown): string | null {
+  return typeof value === 'string' && /^\d{1,4}[dwmy](,\d{1,4}[dwmy]){0,11}$/.test(value) ? value : null;
 }
 
 /** `/api/tasks/areas`: the areas with the class the hub gives them. */
@@ -521,12 +533,26 @@ function errorCode(value: unknown): OpErrorCode {
     : 'internal';
 }
 
+/** `routines_started` of a finished write: the routines that waited for it and got their first due date. */
+function routinesStarted(value: unknown): RoutineStarted[] {
+  if (!Array.isArray(value)) return [];
+  return value.slice(0, 50).flatMap((entry) => {
+    if (!isObj(entry)) return [];
+    const due = day(entry['due']);
+    const after = str(entry['after'], 200);
+    return isTaskId(entry['id']) && due !== null && after !== null ? [{ id: entry['id'], due, after }] : [];
+  });
+}
+
 /** `/api/tasks/ops` with one operation: what the engine said to it. */
 export function opOutcome(doc: unknown): OpOutcome {
   if (!isObj(doc) || doc['kind'] !== 'tasks.result' || !Array.isArray(doc['results'])) throw new ShapeError('result');
   const entry = doc['results'][0];
   if (!isObj(entry)) throw new ShapeError('result');
-  if (entry['ok'] === true && doc['ok'] === true) return { ok: true, id: isTaskId(entry['id']) ? entry['id'] : null };
+  if (entry['ok'] === true && doc['ok'] === true) {
+    const started = routinesStarted(entry['routines_started']);
+    return { ok: true, id: isTaskId(entry['id']) ? entry['id'] : null, ...(started.length > 0 ? { routinesStarted: started } : {}) };
+  }
   const error = isObj(entry['error']) ? entry['error'] : {};
   return {
     ok: false,
@@ -548,6 +574,7 @@ export function donePreview(doc: unknown): DonePreview {
     closesProject: str(doc['closes_project'], 200),
     freed,
     nextDue: next,
+    endsRoutine: doc['ends_routine'] === true,
   };
 }
 

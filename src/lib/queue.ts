@@ -22,7 +22,7 @@ import {
 import { isMeetingAsset, meetingAsset, memoryFileStore, restoreRef, type AttachmentRef, type FileStore } from './attach';
 import { isAreaName, isTaskId } from './parse';
 import { AnswerLost, HubRefused, Unpaired, Unreachable, type DataSource } from './source';
-import type { Op } from './types';
+import type { Op, RoutineStarted } from './types';
 import { CAPTURE_KINDS, MEDIA_CAPTURE_KINDS, POINT_STATES, STATUSES, type MediaCaptureKind } from './types';
 
 export type { FlushReport, PendingState, QueueStore };
@@ -210,6 +210,15 @@ function outcomeOf(error: unknown): SendOutcome {
 
 export class WriteQueue {
   private readonly kit: KitQueue<QueueOp>;
+  /** The routines a finish the hub took started, by the id of the finished task, until `takeStarted` reads them. */
+  private readonly started = new Map<string, RoutineStarted[]>();
+
+  /** The routines the finish of `id` started (the hub's answer to it), once; none when it was not answered yet. */
+  takeStarted(id: string): RoutineStarted[] {
+    const routines = this.started.get(id) ?? [];
+    this.started.delete(id);
+    return routines;
+  }
 
   constructor(
     store: QueueStore,
@@ -337,6 +346,7 @@ export class WriteQueue {
         : { kind: 'refused', code: outcome.code, message: outcome.message };
     }
     if (op.op === 'upload') await this.fileStore.delete(op.file.key);
+    if (op.op === 'done' && outcome.routinesStarted) this.started.set(op.id, outcome.routinesStarted);
     if (op.op === 'new') {
       // The files follow in the place of the new task (the kit takes the task out after this); the same run sends them.
       const at = this.kit.items.findIndex((i) => i.clientOpId === clientOpId);

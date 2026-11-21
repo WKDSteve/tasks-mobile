@@ -4,7 +4,7 @@ import { expect, fakeHub, open, test } from './fixtures';
 test('shows only the areas that may leave the PC, says it is a part, and keeps nothing else (MOB-02, MUI-06)', async ({ page }) => {
   await open(page);
   await expect(page.getByTestId('fake-badge')).toBeVisible();
-  await expect(page.getByTestId('task-list').getByRole('button')).toHaveCount(5);
+  await expect(page.getByTestId('task-list').getByRole('button')).toHaveCount(8);
   await expect(page.getByTestId('partial')).toContainText('2 areas stay on the PC');
   const html = await page.content();
   expect(html).not.toContain('SECRET-MARKER');
@@ -120,9 +120,41 @@ test('finishing shows what it sets off and needs a yes (MUI-01)', async ({ page 
   await page.getByRole('button', { name: 'Finish …' }).click();
   await page.getByRole('button', { name: 'Yes, finish' }).click();
   // Back on the list by itself, with a word on what was done and no refusal (the engine serves no finished task).
-  await expect(page.getByTestId('notice')).toHaveText('Done: “Fix the tap”');
+  await expect(page.getByTestId('notice')).toContainText('Done: “Fix the tap”');
   await expect(page.getByRole('alert')).toHaveCount(0);
   await expect(page.locator('[data-id="kitchen/fix-the-tap"]')).toHaveCount(0);
+});
+
+test('a routine of a ladder says its round, the last round says the finish ends it (repeat_steps)', async ({ page }) => {
+  await open(page);
+  await page.locator('[data-id="kitchen/descale-the-kettle"]').click();
+  await expect(page.getByTestId('routine')).toHaveText('Round 2 of 3 (1w, 4w, 12w)');
+  await expect(page.getByTestId('routine-waits')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Finish …' }).click();
+  await expect(page.getByTestId('done-preview')).toContainText('Next round due on');
+  await expect(page.getByTestId('done-ends-routine')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Cancel' }).click();
+  await page.getByRole('button', { name: /Back/ }).click();
+  await page.locator('[data-id="kitchen/descale-the-boiler"]').click();
+  await expect(page.getByTestId('routine')).toHaveText('Round 2 of 2 (1w, 4w)');
+  await page.getByRole('button', { name: 'Finish …' }).click();
+  await expect(page.getByTestId('done-ends-routine')).toHaveText('The last round of the routine (1w, 4w): it ends, no further round comes.');
+  await expect(page.getByTestId('done-preview')).not.toContainText('Next round due on');
+});
+
+test('a routine that waits for a finish names it, and the finish says when the routine is due (routines_started)', async ({ page }) => {
+  await open(page);
+  await page.locator('[data-id="kitchen/check-the-seals"]').click();
+  await expect(page.getByTestId('routine')).toHaveText('Repeats: 2w');
+  await expect(page.getByTestId('routine-waits')).toHaveText('Routine waits for: kitchen/fix-the-tap');
+  await page.getByRole('button', { name: /Back/ }).click();
+  await page.locator('[data-id="kitchen/fix-the-tap"]').click();
+  await page.getByRole('button', { name: 'Finish …' }).click();
+  await page.getByRole('button', { name: 'Yes, finish' }).click();
+  await expect(page.getByTestId('notice')).toContainText('A routine starts: kitchen/check-the-seals, due ');
+  // It waits no more: with its due date it runs like any routine.
+  await page.locator('[data-id="kitchen/check-the-seals"]').click();
+  await expect(page.getByTestId('routine-waits')).toHaveCount(0);
 });
 
 test('answers an open question', async ({ page }) => {
@@ -262,7 +294,7 @@ test('starts on Today: the engine picks, open questions, what is due and the cou
   await expect(page.getByTestId('today-next').getByRole('button').first()).toHaveAttribute('data-id', 'garden/water-the-plants');
   await expect(page.getByTestId('today-questions').locator('[data-id="garden/choose-a-fence"]')).toBeVisible();
   await expect(page.getByTestId('today-due').locator('[data-id="garden/water-the-plants"]')).toContainText('due 2026-01-10');
-  await expect(page.getByTestId('today-counts').locator('[data-status="open"] dd')).toHaveText('2');
+  await expect(page.getByTestId('today-counts').locator('[data-status="open"] dd')).toHaveText('5');
   await expect(page.getByTestId('today-counts').locator('[data-status="doing"] dd')).toHaveText('1');
   await expect(page.getByTestId('today-counts-part')).toContainText('2 areas stay on the PC');
   const html = await page.content();
@@ -285,7 +317,7 @@ test('Today offline shows the kept copy and says how old it is (MOB-08)', async 
   await expect(page.getByTestId('connection')).toHaveAttribute('data-state', 'offline');
   await expect(page.getByTestId('today-as-of')).toContainText('As of');
   await expect(page.getByTestId('today-next').getByRole('button').first()).toHaveAttribute('data-id', 'garden/water-the-plants');
-  await expect(page.getByTestId('today-counts').locator('[data-status="open"] dd')).toHaveText('2');
+  await expect(page.getByTestId('today-counts').locator('[data-status="open"] dd')).toHaveText('5');
 });
 
 test('a tapped notice opens its task, and the id leaves the address (PWA-06)', async ({ page }) => {

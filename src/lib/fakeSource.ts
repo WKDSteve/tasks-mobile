@@ -19,6 +19,10 @@ interface FakeTask {
   status: string;
   prio?: number;
   due?: string;
+  /** A routine: one interval or a ladder (`1w,4w,12w`), its round, and what it waits for (no `due` yet). */
+  repeat?: string;
+  repeatStep?: number;
+  repeatAfter?: string;
   body: string;
   etag: number;
   questions?: { key: string; title: string; options: { text: string; recommended?: boolean }[]; chosen?: number }[];
@@ -94,6 +98,41 @@ function initialTasks(): FakeTask[] {
       status: 'doing',
       prio: 3,
       body: 'Washer is worn.',
+      etag: 1,
+    },
+    {
+      // A ladder in its second round of three.
+      id: 'kitchen/descale-the-kettle',
+      area: 'kitchen',
+      title: 'Descale the kettle',
+      status: 'open',
+      due: '2026-03-01',
+      repeat: '1w,4w,12w',
+      repeatStep: 2,
+      body: '',
+      etag: 1,
+    },
+    {
+      // The last round of a ladder: finishing it ends the routine.
+      id: 'kitchen/descale-the-boiler',
+      area: 'kitchen',
+      title: 'Descale the boiler',
+      status: 'open',
+      due: '2026-03-02',
+      repeat: '1w,4w',
+      repeatStep: 2,
+      body: '',
+      etag: 1,
+    },
+    {
+      // A routine that waits for a finish: no due date until `kitchen/fix-the-tap` is finished.
+      id: 'kitchen/check-the-seals',
+      area: 'kitchen',
+      title: 'Check the seals',
+      status: 'open',
+      repeat: '2w',
+      repeatAfter: 'kitchen/fix-the-tap',
+      body: '',
       etag: 1,
     },
     {
@@ -314,6 +353,9 @@ export class FakeSource implements DataSource, FakeControls {
       status: t.status,
       ...(t.prio !== undefined ? { prio: t.prio } : {}),
       ...(t.due !== undefined ? { due: t.due } : {}),
+      ...(t.repeat !== undefined ? { repeat: t.repeat } : {}),
+      ...(t.repeatStep !== undefined ? { repeat_step: t.repeatStep } : {}),
+      ...(t.repeatAfter !== undefined ? { repeat_after: t.repeatAfter } : {}),
       ...(open > 0 ? { open_questions: open } : {}),
       etag: `e${t.etag}`,
     };
@@ -572,14 +614,23 @@ export class FakeSource implements DataSource, FakeControls {
     return pathDetail({ ...HEAD, kind: 'tasks.path', path: this.pathEntry(p), body: 'Vom Einstieg bis Async.', nodes }, this.classes());
   }
 
-  private result(ok: boolean, id: string | null, error?: { code: string; message: string }): unknown {
+  private result(ok: boolean, id: string | null, error?: { code: string; message: string }, started: unknown[] = []): unknown {
     return {
       ...HEAD,
       kind: 'tasks.result',
       digest: 'fake',
       dry_run: false,
       ok,
-      results: [{ n: 1, op: 'x', ok, ...(id ? { id } : {}), ...(error ? { error: { ...error, retryable: false } } : {}) }],
+      results: [
+        {
+          n: 1,
+          op: 'x',
+          ok,
+          ...(id ? { id } : {}),
+          ...(started.length > 0 ? { routines_started: started } : {}),
+          ...(error ? { error: { ...error, retryable: false } } : {}),
+        },
+      ],
     };
   }
 
@@ -639,7 +690,13 @@ export class FakeSource implements DataSource, FakeControls {
         return this.result(false, t.id, { code: 'conflict', message: 'the task changed since the preview' });
       t.status = 'done';
       t.etag += 1;
-      return this.result(true, t.id);
+      // The routines that waited for this finish get their first due date, like the engine's `routines_started`.
+      const started = this.tasks.filter((x) => x.repeatAfter === t.id && x.due === undefined);
+      for (const r of started) {
+        r.due = dayFrom(14);
+        r.etag += 1;
+      }
+      return this.result(true, t.id, undefined, started.map((r) => ({ id: r.id, due: r.due, after: t.id })));
     }
     if (op.if_match !== undefined && op.if_match !== `e${t.etag}`)
       return this.result(false, t.id, { code: 'conflict', message: 'the file changed since it was read' });
@@ -720,6 +777,11 @@ export class FakeSource implements DataSource, FakeControls {
       to: 'Backlog',
       ...(t.status === 'done' ? { already: true } : { confirm: `done:${t.id}:e${t.etag}` }),
       ...(t.id === 'kitchen/fix-the-tap' ? { freed: ['garden/water-the-plants'] } : {}),
+      // A ladder: the last round starts no next one (`ends_routine`), any other round names the due date of the next.
+      ...(t.repeat !== undefined && t.repeat.split(',').length === (t.repeatStep ?? 1) ? { ends_routine: true } : {}),
+      ...(t.repeat !== undefined && t.due !== undefined && t.repeat.split(',').length !== (t.repeatStep ?? 1)
+        ? { next_round: { due: dayFrom(7) } }
+        : {}),
     });
   }
 }

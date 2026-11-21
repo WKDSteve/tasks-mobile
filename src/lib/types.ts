@@ -29,6 +29,12 @@ export interface TaskBrief {
   due: string | null;
   remind: string | null;
   openQuestions: number;
+  /** A routine (`repeat`): one interval (`8w`) or a ladder (`1w,4w,12w`), as the engine wrote it; absent: no routine. */
+  repeat?: string;
+  /** The round of a ladder this open task is (1-based); absent: not said (round 1). */
+  repeatStep?: number;
+  /** The task or path (or point of one) the routine waits for; with no `due` it has not started yet. */
+  repeatAfter?: string;
   /** The version the engine read: every change sends it back (`if_match`), so a newer file is never overwritten. */
   etag: string | null;
 }
@@ -222,7 +228,7 @@ export type OpErrorCode =
 
 /** What the engine said to one write. */
 export type OpOutcome =
-  | { ok: true; id: string | null }
+  | { ok: true; id: string | null; routinesStarted?: RoutineStarted[] }
   | { ok: false; code: OpErrorCode; message: string; retryable: boolean };
 
 /** What finishing a task would do, and the word that confirms exactly that. */
@@ -238,6 +244,15 @@ export interface DonePreview {
   freed: string[];
   /** A routine: the due date of the round the finish starts. */
   nextDue: string | null;
+  /** The task is the last round of a ladder: the finish starts no next round, the routine ends. */
+  endsRoutine: boolean;
+}
+
+/** A routine the finish started: it waited for what was finished and now has its first due date. */
+export interface RoutineStarted {
+  id: string;
+  due: string;
+  after: string;
 }
 
 /** `hello` of the hub: whether the engine is there, and its version. */

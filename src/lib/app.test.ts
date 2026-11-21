@@ -119,7 +119,7 @@ describe('App on the synthetic vault', () => {
     // The fake engine names the task of the area that stays on the PC first: it is not there.
     expect(app.view?.next[0]?.id).toBe('garden/water-the-plants');
     expect(app.view?.next.some((p) => p.area === 'vault-secret')).toBe(false);
-    expect(app.view?.counts).toEqual({ open: 2, decision: 1, doing: 1, parked: 1 });
+    expect(app.view?.counts).toEqual({ open: 5, decision: 1, doing: 1, parked: 1 });
     expect(d.views.value?.view.counts).toEqual(app.view?.counts);
     expect(d.views.value?.view.next).toEqual(app.view?.next);
   });
@@ -371,7 +371,7 @@ describe('App on the synthetic vault', () => {
     const fake = new FakeSource();
     const app = new App(deps(fake));
     await app.start(null);
-    const task = app.view!.tasks.find((t) => t.id === 'kitchen/fix-the-tap')!;
+    const task = app.view!.tasks.find((t) => t.id === 'garden/water-the-plants')!;
     app.screen = 'list';
     await app.openTask(task);
     await app.askFinish(task);
@@ -379,6 +379,38 @@ describe('App on the synthetic vault', () => {
     expect(app.notice).toEqual({ key: 'task.done_ok', params: { title: task.title }, tone: 'info' });
     expect(app.screen).toBe('list');
     expect(app.opened).toBeNull();
+  });
+
+  it('says when the routine is due that a finish started (routines_started), and not after a finish that started none', async () => {
+    const fake = new FakeSource();
+    const app = new App(deps(fake));
+    await app.start(null);
+    const seals = app.view!.tasks.find((t) => t.id === 'kitchen/check-the-seals')!;
+    // A routine that waits for a finish: no due date, and it names what it waits for.
+    expect(seals).toMatchObject({ repeat: '2w', repeatAfter: 'kitchen/fix-the-tap', due: null });
+    const tap = app.view!.tasks.find((t) => t.id === 'kitchen/fix-the-tap')!;
+    await app.openTask(tap);
+    await app.askFinish(tap);
+    await app.finish(tap);
+    expect(app.notice).toMatchObject({
+      key: 'task.done_ok_routine',
+      params: { title: tap.title, id: 'kitchen/check-the-seals', day: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/) },
+    });
+    // The finish gave the routine its first due date: it waits no more.
+    expect(app.view!.tasks.find((t) => t.id === 'kitchen/check-the-seals')?.due).not.toBeNull();
+  });
+
+  it('shows in the preview whether the finish starts a next round or ends the ladder', async () => {
+    const fake = new FakeSource();
+    const app = new App(deps(fake));
+    await app.start(null);
+    const kettle = app.view!.tasks.find((t) => t.id === 'kitchen/descale-the-kettle')!;
+    expect(kettle).toMatchObject({ repeat: '1w,4w,12w', repeatStep: 2 });
+    await app.askFinish(kettle);
+    expect(app.preview).toMatchObject({ endsRoutine: false, nextDue: expect.any(String) });
+    const boiler = app.view!.tasks.find((t) => t.id === 'kitchen/descale-the-boiler')!;
+    await app.askFinish(boiler);
+    expect(app.preview).toMatchObject({ endsRoutine: true, nextDue: null });
   });
 
   it('goes back to Today after finishing a task opened there', async () => {

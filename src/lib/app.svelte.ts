@@ -961,13 +961,23 @@ export class App {
         this.opened = null;
         this.detail = null;
         this.screen = this.returnTo;
-        this.notice = { key: 'task.done_ok', params: { title: task.title }, tone: 'info' };
+        this.notice = this.doneNotice(task);
       } else {
         await this.reopen();
       }
     } finally {
       this.busy = false;
     }
+  }
+
+  /** "Done", and when the finish started routines (they waited for it), when the first is due. */
+  private doneNotice(task: TaskBrief): Notice {
+    const [first, ...more] = this.queue.takeStarted(task.id);
+    if (!first) return { key: 'task.done_ok', params: { title: task.title }, tone: 'info' };
+    const params = { title: task.title, id: first.id, day: first.due };
+    return more.length === 0
+      ? { key: 'task.done_ok_routine', params, tone: 'info' }
+      : { key: 'task.done_ok_routines', params: { ...params, n: more.length + 1 }, tone: 'info' };
   }
 
   async sendNow(): Promise<void> {

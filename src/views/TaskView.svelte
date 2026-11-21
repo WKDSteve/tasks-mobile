@@ -7,10 +7,13 @@
   import { modal } from '../lib/modal';
   import type { Translate, TextKey } from '../lib/i18n';
   import { SETTABLE, type Status } from '../lib/types';
+  import { everyOf, roundOf, waitsFor } from '../lib/routine';
 
   let { app, t }: { app: App; t: Translate } = $props();
 
   const task = $derived(app.detail?.task ?? app.opened);
+  const round = $derived(task ? roundOf(task) : null);
+  const waits = $derived(task ? waitsFor(task) : null);
   let chosen = $state<Status | ''>('');
   /** The dialog that confirms a run of the test sheets is open (MUI-01: a step on the PC is confirmed). */
   let askRun = $state(false);
@@ -39,6 +42,13 @@
   <article>
     <h2 class="untrusted" data-testid="task-title">{markHidden(task.title)}</h2>
     <p class="muted">{task.area}{#if task.status} · {t(`status.${task.status}` as TextKey)}{/if}</p>
+    {#if task.repeat}
+      <!-- A routine: the round of a ladder, or the interval; one that waits for a finish names what it waits for. -->
+      <p class="muted" data-testid="routine">
+        {#if round}{t('task.round', { ...round, every: everyOf(task.repeat) })}{:else}{t('task.repeats', { every: everyOf(task.repeat) })}{/if}
+      </p>
+      {#if waits}<p class="muted untrusted" data-testid="routine-waits">{t('task.waits_for', { ref: markHidden(waits) })}</p>{/if}
+    {/if}
 
     {#if task.status !== 'done' && !app.may('change')}
       <p class="muted" data-testid="no-change">{t('rights.change_none', { level: app.level ?? '' })}</p>
@@ -67,7 +77,10 @@
         {#if app.preview.closesPlan}<p>{t('task.done_closes_plan', { plan: app.preview.closesPlan })}</p>{/if}
         {#if app.preview.closesProject}<p>{t('task.done_closes_project', { project: app.preview.closesProject })}</p>{/if}
         {#if app.preview.freed.length > 0}<p>{t('task.done_frees', { n: app.preview.freed.length })}</p>{/if}
-        {#if app.preview.nextDue}<p>{t('task.done_next', { day: app.preview.nextDue })}</p>{/if}
+        {#if app.preview.endsRoutine}
+          <!-- The last round of a ladder: no next round, the routine ends with this finish. -->
+          <p data-testid="done-ends-routine">{t('task.done_ends_routine', { every: everyOf(task.repeat) })}</p>
+        {:else if app.preview.nextDue}<p>{t('task.done_next', { day: app.preview.nextDue })}</p>{/if}
         <div class="actions">
           <!-- Cancel first: the modal focuses the first control, and that is the safe one. -->
           <button onclick={() => (app.preview = null)}>{t('task.cancel')}</button>

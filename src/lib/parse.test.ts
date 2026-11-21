@@ -92,7 +92,46 @@ describe('shape checks at the edge (MSEC-13)', () => {
 
   it('reads a done preview and keeps only ids among the freed', () => {
     const p = donePreview({ kind: 'tasks.donepreview', confirm: 'c1', freed: ['garden/a', '../x', 3], next_round: { due: '2026-02-01' } });
-    expect(p).toEqual({ already: false, confirm: 'c1', closesPlan: null, closesProject: null, freed: ['garden/a'], nextDue: '2026-02-01' });
+    expect(p).toEqual({ already: false, confirm: 'c1', closesPlan: null, closesProject: null, freed: ['garden/a'], nextDue: '2026-02-01', endsRoutine: false });
+  });
+
+  it('reads the last round of a ladder from a done preview, and only a true word', () => {
+    expect(donePreview({ kind: 'tasks.donepreview', confirm: 'c1', ends_routine: true }).endsRoutine).toBe(true);
+    expect(donePreview({ kind: 'tasks.donepreview', confirm: 'c1', ends_routine: 'yes' }).endsRoutine).toBe(false);
+  });
+
+  it('reads the routine of a task: an interval or a ladder, its round and what it waits for; anything else is none', () => {
+    const base = { id: 'garden/a', area: 'garden', title: 'A' };
+    expect(taskBrief({ ...base, repeat: '1w,4w,12w', repeat_step: 2, repeat_after: 'garden/p#k1' })).toMatchObject({
+      repeat: '1w,4w,12w',
+      repeatStep: 2,
+      repeatAfter: 'garden/p#k1',
+    });
+    const none = taskBrief({ ...base, repeat: 'weekly', repeat_step: 0, repeat_after: 3 })!;
+    expect(none).not.toHaveProperty('repeat');
+    expect(none).not.toHaveProperty('repeatStep');
+    expect(none).not.toHaveProperty('repeatAfter');
+    expect(taskBrief({ ...base, repeat: '1w,4w,' })).not.toHaveProperty('repeat');
+  });
+
+  it('reads the routines a finish started, and leaves out a malformed entry', () => {
+    const doc = {
+      kind: 'tasks.result',
+      ok: true,
+      results: [
+        {
+          ok: true,
+          id: 'garden/a',
+          routines_started: [
+            { id: 'garden/r', due: '2026-03-01', after: 'garden/a' },
+            { id: '../x', due: '2026-03-01', after: 'garden/a' },
+            { id: 'garden/s', due: 'soon', after: 'garden/a' },
+          ],
+        },
+      ],
+    };
+    expect(opOutcome(doc)).toEqual({ ok: true, id: 'garden/a', routinesStarted: [{ id: 'garden/r', due: '2026-03-01', after: 'garden/a' }] });
+    expect(opOutcome({ ...doc, results: [{ ok: true, id: 'garden/a' }] })).toEqual({ ok: true, id: 'garden/a' });
   });
 });
 
