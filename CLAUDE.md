@@ -46,3 +46,6 @@ node --check public/sw.js
   `WEB-*` aus Ruleset `native`).
 - Bekannter Fund (offen, Task `tasks-desktop/mobile-bestaetigungs-overlays-auf-dialog`): `TaskView.svelte` hat zwei
   eigene Bestätigungs-Overlays (`div[role=dialog]`, `done-preview` und `run-confirm`) statt `<dialog>`.
+- `legacy-scan` läuft über den Lockfile (exakte devDependency, es gilt die Quarantäne aus `pnpm-workspace.yaml`):
+  `DISABLE_TELEMETRY=1 pnpm exec modern-web-guidance legacy-scan src --json`; die CI führt ihn als Hinweis aus.
+  `.claude/settings.json` schaltet die Telemetrie ab und erlaubt nur `npx -y modern-web-guidance@latest *`.
