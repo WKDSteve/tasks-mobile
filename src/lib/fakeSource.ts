@@ -10,7 +10,7 @@ import { areaClasses, deviceLevel, donePreview, hubHello, meetingDetail, meeting
 import { AnswerLost, HubRefused, Unreachable, type DataSource } from './source';
 import type { PushSubscriptionBody } from './push';
 import type { Right } from './rights';
-import type { ConfirmRequest, DataClass, DonePreview, HubHello, MeetingBrief, MeetingDetail, Op, OpOutcome, PathBrief, PathDetail, TaskDetail, TestingRun, VaultView } from './types';
+import type { ConfirmRequest, DataClass, DonePreview, HubHello, MeetingBrief, MeetingDetail, Op, OpOutcome, PathBrief, PathDetail, TaskDetail, TestingRun, UploadKind, VaultView } from './types';
 
 interface FakeTask {
   id: string;
@@ -38,7 +38,7 @@ export interface FakeControls {
   /** The writes the fake received, in order. */
   readonly writes: { clientOpId: string; op: Op }[];
   /** The files the fake took, by task: name, type and size. */
-  readonly uploads: { id: string; name: string; type: string; size: number }[];
+  readonly uploads: { id: string; name: string; type: string; size: number; kind?: UploadKind }[];
   /** The next upload is refused by the hub (a vault that changed while the file was on its way). */
   refuseNextUpload: boolean;
   /** The next upload is attached but its answer is lost. */
@@ -190,6 +190,8 @@ interface FakeMeeting {
   online?: string;
   agenda: string[];
   minutes: string[];
+  /** Who was asked to come and whether they are ticked; the hub gives them for a public area only (here: garden). */
+  people?: { name: string; email?: string; present: boolean }[];
 }
 
 function initialMeetings(): FakeMeeting[] {
@@ -213,6 +215,10 @@ function initialMeetings(): FakeMeeting[] {
       online: 'https://meet.jit.si/zaun',
       agenda: ['Holz oder Metall'],
       minutes: [],
+      people: [
+        { name: 'Anna Berger', email: 'anna@example.org', present: false },
+        { name: 'Ben Huber', present: true },
+      ],
     },
   ];
 }
@@ -256,7 +262,7 @@ export class FakeSource implements DataSource, FakeControls {
     for (const go of this.held.splice(0)) go();
   }
   readonly writes: { clientOpId: string; op: Op }[] = [];
-  readonly uploads: { id: string; name: string; type: string; size: number }[] = [];
+  readonly uploads: { id: string; name: string; type: string; size: number; kind?: UploadKind }[] = [];
   refuseNextUpload = false;
   loseNextUploadAnswer = false;
   /** The subscription the fake hub keeps for this device (Web Push), or `null`. */
@@ -531,6 +537,8 @@ export class FakeSource implements DataSource, FakeControls {
         body,
         agenda: m.agenda.map((text, i) => ({ n: i + 1, text, ticked: false })),
         followups: [],
+        // As the hub cuts it: the people of a public area, an internal one only when the PC released them (not here).
+        participants: CLASSES[m.area] === 'public' ? (m.people ?? []).map((x, i) => ({ n: i + 1, ...x })) : [],
       },
       this.classes(),
     );
@@ -579,8 +587,27 @@ export class FakeSource implements DataSource, FakeControls {
     if (op.op === 'meeting_capture') {
       const m = this.gatherings.find((x) => x.id === op.id);
       if (!m) return this.result(false, null, { code: 'not_found', message: 'no such meeting' });
+      const at = op.entry.at ?? '12:00';
+      if ('asset' in op.entry) {
+        // Like the engine: the file must be there, and the line is a link to it.
+        const asset = op.entry.asset;
+        if (!this.uploads.some((u) => u.id === m.id && `${u.kind === 'image' ? 'assets/images' : 'assets/audio'}/${u.name}` === asset))
+          return this.result(false, m.id, { code: 'invalid_argument', message: `the meeting has no asset ${asset}` });
+        const name = asset.split('/').pop() ?? asset;
+        m.minutes.push(op.entry.kind === 'photo' ? `${at} ![${name}](${asset})` : `${at} [Audio: ${name}](${asset})`);
+        return this.result(true, m.id);
+      }
       const words: Record<string, string> = { task: 'Aufgabe: ', decision: 'Beschluss: ', question: 'Frage: ', text: '' };
-      m.minutes.push(`${op.entry.at ?? '12:00'} ${words[op.entry.kind] ?? ''}${op.entry.text}`);
+      m.minutes.push(`${at} ${words[op.entry.kind] ?? ''}${op.entry.text}`);
+      return this.result(true, m.id);
+    }
+    if (op.op === 'meeting_attend') {
+      const m = this.gatherings.find((x) => x.id === op.id);
+      // Like the hub: the people of an area that is not public are not for this phone.
+      if (!m || CLASSES[m.area] !== 'public') return this.result(false, null, { code: 'not_found', message: 'no such meeting' });
+      const person = m.people?.find((x) => x.name === op.name);
+      if (!person) return this.result(false, m.id, { code: 'not_found', message: 'no such participant' });
+      person.present = op.present;
       return this.result(true, m.id);
     }
     if (op.op === 'node_set') {
@@ -643,11 +670,25 @@ export class FakeSource implements DataSource, FakeControls {
     return outcome;
   }
 
-  async upload(id: string, file: Blob, name: string): Promise<OpOutcome> {
+  async upload(id: string, file: Blob, name: string, kind?: UploadKind): Promise<OpOutcome> {
     this.reachable();
     if (this.refuseNextUpload) {
       this.refuseNextUpload = false;
       throw new HubRefused(409, 'vault_changed', 'another vault was chosen while the file was on its way: nothing was attached');
+    }
+    // Like the hub: a phone attaches to a meeting only an image or an audio file (tasks-desktop, upload.rs).
+    const meeting = this.gatherings.find((x) => x.id === id);
+    if (meeting) {
+      if (kind !== 'image' && kind !== 'audio') throw new HubRefused(403, 'not_for_devices', 'a phone attaches only to a task');
+      if (this.uploads.some((u) => u.id === id && u.name === name && u.kind === kind))
+        return opOutcome(this.result(false, id, { code: 'exists', message: 'attach: the task has an asset of this name already' }));
+      this.uploads.push({ id, name, type: file.type, size: file.size, kind });
+      const done = opOutcome(this.result(true, id));
+      if (this.loseNextUploadAnswer) {
+        this.loseNextUploadAnswer = false;
+        throw new AnswerLost();
+      }
+      return done;
     }
     const t = this.tasks.find((x) => x.id === id);
     if (!t) return opOutcome(this.result(false, null, { code: 'not_found', message: 'no such task' }));

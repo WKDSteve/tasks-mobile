@@ -20,6 +20,7 @@ export function rightFor(op: Op): Right {
     case 'done':
     case 'node_set':
     case 'meeting_capture':
+    case 'meeting_attend':
       return 'change';
   }
 }

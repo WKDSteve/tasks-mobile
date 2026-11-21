@@ -28,7 +28,13 @@
       case 'node_set':
         return t('queue.op.node_set', { label, state: t(`point.${item.op.state}` as TextKey) });
       case 'meeting_capture':
-        return t('queue.op.meeting_capture', { label, text: markHidden(item.op.entry.text) });
+        return 'asset' in item.op.entry
+          ? t('queue.op.upload', { label, name: item.op.entry.asset.split('/').pop() ?? '' })
+          : t('queue.op.meeting_capture', { label, text: markHidden(item.op.entry.text) });
+      case 'meeting_file':
+        return t('queue.op.upload', { label, name: item.op.file.name });
+      case 'meeting_attend':
+        return t(item.op.present ? 'queue.op.attend' : 'queue.op.absent', { label, name: markHidden(item.op.name) });
     }
   }
 </script>

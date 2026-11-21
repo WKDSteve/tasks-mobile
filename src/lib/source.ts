@@ -4,7 +4,7 @@
 
 import type { PushSubscriptionBody } from './push';
 import type { Right } from './rights';
-import type { ConfirmRequest, DonePreview, HubHello, MeetingBrief, MeetingDetail, Op, OpOutcome, PathBrief, PathDetail, TaskDetail, TestingRun, VaultView } from './types';
+import type { ConfirmRequest, DonePreview, HubHello, MeetingBrief, MeetingDetail, Op, OpOutcome, PathBrief, PathDetail, TaskDetail, TestingRun, UploadKind, VaultView } from './types';
 
 /** The hub could not be reached at all (no tunnel, no network): the page is offline, the write waits. */
 export class Unreachable extends Error {
@@ -69,7 +69,7 @@ export interface DataSource {
    * A file becomes an asset of the task `id` (the hub's upload route), under `name`. Sent once like a write: when
    * the answer is lost it is `AnswerLost`, and the user decides.
    */
-  upload(id: string, file: Blob, name: string): Promise<OpOutcome>;
+  upload(id: string, file: Blob, name: string, kind?: UploadKind): Promise<OpOutcome>;
   /** The names of the test sheets that name the task `id` (the testing hub, through this hub); `null`: no testing. */
   testingSheets(id: string): Promise<string[] | null>;
   /** Where the run of the testing hub stands. */

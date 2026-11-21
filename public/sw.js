@@ -32,7 +32,9 @@ self.addEventListener('activate', (event) => {
 // Notices of the hub (Web Push). The hub sends the kind and at most the id of a task of a released area (PWA-06), never
 // its title or text: the notice says only what kind of thing waits, the task is read over the paired way when it is
 // tapped. Anything else that arrives is not shown. Same checks as `readNotice` in `src/lib/push.ts`.
-const KINDS = ['remind', 'decision'];
+const KINDS = ['remind', 'decision', 'meeting', 'meeting_end'];
+// The kinds whose id is a meeting (the scheduler of the hub): a tap opens the meeting.
+const MEETING_KINDS = ['meeting', 'meeting_end'];
 const TASK_ID = /^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/;
 const WORDS = {
   de: {
@@ -40,11 +42,15 @@ const WORDS = {
     // the hub's notice of the day (tasks-desktop b171dff): no id, the page opens on Today
     remind_day: 'Heute sind Erinnerungen fällig.',
     decision: 'Eine Task wartet auf deine Entscheidung.',
+    meeting: 'Ein Meeting beginnt bald.',
+    meeting_end: 'Ein Meeting ist vorbei: Ergebnis eintragen oder abschließen?',
   },
   en: {
     remind: 'A reminder is due.',
     remind_day: 'Reminders are due today.',
     decision: 'A task waits for your decision.',
+    meeting: 'A meeting begins soon.',
+    meeting_end: 'A meeting has ended: enter the result or finish it?',
   },
 };
 
@@ -77,21 +83,25 @@ self.addEventListener('push', (event) => {
       badge: new URL('icons/icon-monochrome-192.png', self.registration.scope).href,
       // One notice per task and kind: a second one replaces the first.
       tag: `${notice.kind}:${notice.id ?? ''}`,
-      data: { id: notice.id },
+      data: { id: notice.id, kind: notice.kind },
     }),
   );
 });
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
-  const id = readNotice({ kind: KINDS[0], id: event.notification.data && event.notification.data.id })?.id ?? null;
+  const data = event.notification.data || {};
+  // Read again like a notice that arrives: a kind of this app and the id of a task or meeting, nothing else.
+  const notice = readNotice({ kind: KINDS.includes(data.kind) ? data.kind : KINDS[0], id: data.id });
+  const id = notice?.id ?? null;
+  const meeting = notice !== null && MEETING_KINDS.includes(notice.kind);
   const target = new URL(self.registration.scope);
-  if (id !== null) target.searchParams.set('task', id);
+  if (id !== null) target.searchParams.set(meeting ? 'meeting' : 'task', id);
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {
       const open = list.find((c) => c.url.startsWith(self.registration.scope));
       if (open) {
-        if (id !== null) open.postMessage({ open: id });
+        if (id !== null) open.postMessage(meeting ? { meeting: id } : { open: id });
         return open.focus();
       }
       return self.clients.openWindow(target.href);

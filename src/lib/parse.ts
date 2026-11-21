@@ -479,7 +479,24 @@ export function meetingDetail(doc: unknown, classes: Map<string, DataClass>): Me
         task: isTaskId(f['task']) ? (f['task'] as string) : null,
       }))
       .filter((f) => f.text !== ''),
+    // The name and the tick only: an address the hub let through for a public area stays out of the page.
+    participants: items(doc['participants'])
+      .slice(0, MAX_PARTICIPANTS)
+      .map((p) => ({ n: count(p['n']), name: str(p['name'], 200) ?? '', present: p['present'] === true }))
+      .filter((p) => p.name !== '' && p.n > 0),
   };
+}
+
+/** The most participants shown. */
+export const MAX_PARTICIPANTS = 200;
+
+/** A line of the minutes for the eye: a photo or a voice note the engine wrote as a link shows its name, not the link. */
+export function minuteShown(text: string): { kind: 'text' | 'photo' | 'audio'; text: string } {
+  const photo = /^!\[([^\]]*)\]\(assets\/[^)\s]+\)$/.exec(text);
+  if (photo) return { kind: 'photo', text: photo[1] ?? '' };
+  const audio = /^\[Audio: ([^\]]*)\]\(assets\/[^)\s]+\)$/.exec(text);
+  if (audio) return { kind: 'audio', text: audio[1] ?? '' };
+  return { kind: 'text', text };
 }
 
 export const OP_ERROR_CODES: readonly OpErrorCode[] = [

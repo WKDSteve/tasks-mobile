@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { areaClasses, dataClassOf, deviceLevel, testingSheets, donePreview, ExportClassError, isTaskId, MAX_NEXT, nextPicks, opOutcome, meetingDetail, meetingList, minutesOf, pathDetail, pathList, phoneExport, ShapeError, statusCounts, taskBrief, taskDetail, testingRun, vaultView } from './parse';
+import { areaClasses, dataClassOf, deviceLevel, testingSheets, donePreview, ExportClassError, isTaskId, MAX_NEXT, nextPicks, opOutcome, meetingDetail, meetingList, minuteShown, minutesOf, pathDetail, pathList, phoneExport, ShapeError, statusCounts, taskBrief, taskDetail, testingRun, vaultView } from './parse';
 
 const classes = new Map([
   ['garden', 'public' as const],
@@ -304,6 +304,41 @@ describe('learning paths (the hub cut them; the page checks again)', () => {
     expect(d.points[2]?.reason).toBe('kenne ich');
     expect(d.points[0]?.derived).toBe('learned');
     expect(() => pathDetail({ ...doc, path: entry('secret/x', 'secret') }, classes)).toThrow(ShapeError);
+  });
+});
+
+describe('the people and the files of a meeting', () => {
+  const classes = new Map([['garden', 'public' as const]]);
+  const entry = { id: 'garden/b', area: 'garden', title: 'B', date: '2026-11-21', status: 'planned' };
+
+  it('takes a participant as a name and a tick: an address never reaches the page', () => {
+    const d = meetingDetail(
+      {
+        kind: 'tasks.meeting',
+        meeting: entry,
+        body: '',
+        participants: [
+          { n: 1, name: 'Anna', email: 'anna@example.org', role: 'Chair', present: true },
+          { n: 2, name: 'Ben', present: false },
+          { n: 3, name: '', present: true },
+          { name: 'No number', present: true },
+        ],
+      },
+      classes,
+    );
+    expect(d.participants).toEqual([
+      { n: 1, name: 'Anna', present: true },
+      { n: 2, name: 'Ben', present: false },
+    ]);
+    expect(JSON.stringify(d)).not.toContain('example.org');
+    expect(meetingDetail({ kind: 'tasks.meeting', meeting: entry, body: '' }, classes).participants).toEqual([]);
+  });
+
+  it('shows a line of a photo or a voice note by the name of its file', () => {
+    expect(minuteShown('![photo-1.jpg](assets/images/photo-1.jpg)')).toEqual({ kind: 'photo', text: 'photo-1.jpg' });
+    expect(minuteShown('[Audio: voice-1.webm](assets/audio/voice-1.webm)')).toEqual({ kind: 'audio', text: 'voice-1.webm' });
+    expect(minuteShown('![x](https://example.org/x.png)')).toEqual({ kind: 'text', text: '![x](https://example.org/x.png)' });
+    expect(minuteShown('Aufgabe: Mail')).toEqual({ kind: 'text', text: 'Aufgabe: Mail' });
   });
 });
 

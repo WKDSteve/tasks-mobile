@@ -1,13 +1,17 @@
-// Notices from the hub (Web Push, `appkit-hub::push`): a reminder that is due, a task that waits for a decision. The
-// hub sends only the kind and the id of a task of a released area (PWA-06); the phone fetches the rest over its paired
-// way when the notice is tapped. The service worker (`public/sw.js`) shows the notice; this file subscribes and
+// Notices from the hub (Web Push, `appkit-hub::push`): a reminder that is due, a task that waits for a decision, a
+// meeting that begins soon (`meeting`) or has just ended (`meeting_end`, the scheduler of the hub). The hub sends only
+// the kind and the id of a task or meeting of a released area (PWA-06); the phone fetches the rest (title, time, place,
+// Join) over its paired way when the notice is tapped. The service worker (`public/sw.js`) shows the notice; this file subscribes and
 // unsubscribes. Permission is asked only when the person turns notices on (AND-01), never at the start.
 
 import { isTaskId } from './parse';
 
 /** The kinds of notices tasks-mobile subscribes to. The hub sends exactly these words. */
-export const PUSH_KINDS = ['remind', 'decision'] as const;
+export const PUSH_KINDS = ['remind', 'decision', 'meeting', 'meeting_end'] as const;
 export type PushKind = (typeof PUSH_KINDS)[number];
+
+/** The kinds whose id is a meeting: a tap opens the meeting, not a task. */
+export const MEETING_KINDS: readonly PushKind[] = ['meeting', 'meeting_end'];
 
 /** What the page says about notices. */
 export type PushState = 'unsupported' | 'off' | 'on' | 'denied';
@@ -27,6 +31,8 @@ export interface PushAccess {
   permission(): NotificationPermission;
   /** Is there a subscription of this page already? */
   subscribed(): Promise<boolean>;
+  /** The subscription of this page as the hub takes it, without asking anything; `null` when there is none. */
+  current?(): Promise<{ endpoint: string; p256dh: string; auth: string } | null>;
   /** Ask for the permission (once, on the button) and subscribe with the hub's key; `null` when it was refused. */
   subscribe(key: string): Promise<{ endpoint: string; p256dh: string; auth: string } | null>;
   /** Let go of the subscription of the browser. */
@@ -55,10 +61,17 @@ export function taskFromAddress(search: string): string | null {
   return id !== null && isTaskId(id) ? id : null;
 }
 
-/** The address without `?task=`, so a reload does not open the task again. */
+/** The id of a meeting the address asks to open (`?meeting=<area>/<slug>`, from a tapped notice), or `null`. */
+export function meetingFromAddress(search: string): string | null {
+  const id = new URLSearchParams(search).get('meeting');
+  return id !== null && isTaskId(id) ? id : null;
+}
+
+/** The address without `?task=` and `?meeting=`, so a reload does not open them again. */
 export function withoutTask(pathname: string, search: string, hash: string): string {
   const params = new URLSearchParams(search);
   params.delete('task');
+  params.delete('meeting');
   const rest = params.toString();
   return `${pathname}${rest ? `?${rest}` : ''}${hash}`;
 }
@@ -87,6 +100,10 @@ export function browserPush(nav: Navigator, notification: typeof Notification | 
     supported: () => 'serviceWorker' in nav && notification !== undefined && typeof PushManager !== 'undefined',
     permission: () => notification?.permission ?? 'denied',
     subscribed: async () => ((await (await registration())?.pushManager.getSubscription()) ?? null) !== null,
+    current: async () => {
+      const sub = await (await registration())?.pushManager.getSubscription();
+      return sub ? { endpoint: sub.endpoint, p256dh: b64url(sub.getKey('p256dh')), auth: b64url(sub.getKey('auth')) } : null;
+    },
     subscribe: async (key) => {
       if (!notification) return null;
       const reg = await registration();

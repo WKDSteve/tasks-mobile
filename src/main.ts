@@ -6,7 +6,7 @@ import App from './App.svelte';
 import { App as AppState, type AppDeps, type DeviceAccess } from './lib/app.svelte';
 import { indexedDbFileStore, memoryFileStore } from './lib/attach';
 import { HubSource } from './lib/hubSource';
-import { browserPush, taskFromAddress, withoutTask } from './lib/push';
+import { browserPush, meetingFromAddress, taskFromAddress, withoutTask } from './lib/push';
 import { readShare, withoutShare } from './lib/share';
 import type { DataSource } from './lib/source';
 import { draftStore, memoryStore, queueStore, viewStore } from './lib/storage';
@@ -60,7 +60,9 @@ async function main(): Promise<void> {
   }
   // A tapped notice opens the page with the id of its task (`public/sw.js`); it leaves the address too.
   const openTask = taskFromAddress(window.location.search);
-  if (new URLSearchParams(window.location.search).has('task')) {
+  const openMeeting = meetingFromAddress(window.location.search);
+  const asked = new URLSearchParams(window.location.search);
+  if (asked.has('task') || asked.has('meeting')) {
     window.history.replaceState(null, '', withoutTask(window.location.pathname, window.location.search, window.location.hash));
   }
 
@@ -98,6 +100,7 @@ async function main(): Promise<void> {
   mount(App, { target, props: { app: state, shared, storageMissing: db === undefined } });
   await state.start(pairingCode);
   if (openTask) await state.openById(openTask);
+  else if (openMeeting) await state.openMeetingById(openMeeting);
 
   // Back online, or back to the app: send what waits and read again.
   window.addEventListener('online', () => void state.refresh());
@@ -109,6 +112,12 @@ async function main(): Promise<void> {
   if ('serviceWorker' in navigator) {
     // A notice tapped while the page is open: the worker names the task, the page opens it (checked like the address).
     navigator.serviceWorker.addEventListener('message', (event: MessageEvent) => {
+      const data = event.data as { open?: unknown; meeting?: unknown } | null;
+      const meeting = meetingFromAddress(`?meeting=${encodeURIComponent(String(data?.meeting ?? ''))}`);
+      if (meeting) {
+        void state.openMeetingById(meeting);
+        return;
+      }
       const id = taskFromAddress(`?task=${encodeURIComponent(String((event.data as { open?: unknown } | null)?.open ?? ''))}`);
       if (id) void state.openById(id);
     });

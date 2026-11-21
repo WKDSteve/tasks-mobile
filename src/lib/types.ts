@@ -170,11 +170,30 @@ export interface MeetingDetail {
   agenda: { n: number; text: string; ticked: boolean }[];
   minutes: MinuteLine[];
   followups: { n: number; text: string; ticked: boolean; task: string | null }[];
+  /**
+   * Who was asked to come, by name, and whether they are ticked present. Only when the hub let them out (a public area,
+   * or the PC's choice for an internal one); never an address.
+   */
+  participants: Participant[];
+}
+
+/** A participant of a meeting as the phone shows it: the name and the tick, nothing else. */
+export interface Participant {
+  n: number;
+  name: string;
+  present: boolean;
 }
 
 /** What a line of the minutes written on the phone is: the engine writes it into its section too. */
 export type CaptureKind = 'text' | 'task' | 'decision' | 'question';
 export const CAPTURE_KINDS: readonly CaptureKind[] = ['text', 'task', 'decision', 'question'];
+
+/** A line of the minutes that is a file of the meeting: a photo or a voice note, uploaded before the line is written. */
+export type MediaCaptureKind = 'photo' | 'audio';
+export const MEDIA_CAPTURE_KINDS: readonly MediaCaptureKind[] = ['photo', 'audio'];
+
+/** The folder a file of a meeting is uploaded into (`kind` of the hub's upload route). */
+export type UploadKind = 'image' | 'audio';
 
 /** The operations this page sends. The engine checks every one of them. */
 export type Op =
@@ -183,7 +202,9 @@ export type Op =
   | { op: 'answer'; id: string; question: string; option: number; if_match?: string }
   | { op: 'done'; id: string; confirm: string }
   | { op: 'node_set'; id: string; point: string; state: PointState; reason?: string; if_match?: string }
-  | { op: 'meeting_capture'; id: string; entry: { kind: CaptureKind; text: string; at?: string } };
+  | { op: 'meeting_capture'; id: string; entry: { kind: CaptureKind; text: string; at?: string } }
+  | { op: 'meeting_capture'; id: string; entry: { kind: MediaCaptureKind; asset: string; at?: string } }
+  | { op: 'meeting_attend'; id: string; name: string; present: boolean };
 
 export type OpErrorCode =
   | 'invalid_argument'

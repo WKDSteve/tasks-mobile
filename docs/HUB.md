@@ -23,10 +23,14 @@ Done in tasks-desktop (its `mobile.lock`, `tools/build-mobile.py`, `crates/tasks
   leaves the page at read, create and change), `/api/tasks/testing_sheets`, `/api/tasks/testing_run`,
   `/api/tasks/paths`, `/api/tasks/path` (the learning paths, cut by the hub; a point is ticked with `node_set`),
   `/api/tasks/meetings`, `/api/tasks/meeting` (the meetings, cut by the class of their area; a line of the minutes is
-  written with `meeting_capture`);
+  written with `meeting_capture`, a participant ticked by name with `meeting_attend` where the hub gave the
+  participants);
   `POST /api/tasks/ops` (one operation per request), `POST /api/tasks/testing_start` (with `x-device-confirm`, the
   device's confirmation of that very request), `POST /api/tasks/upload?id=` (a file of a captured task, after the
-  `new`; the body is the file, `X-Upload-Name` its name), `POST /auth/exchange`.
+  `new`; the body is the file, `X-Upload-Name` its name; with `kind=image` or `kind=audio` a photo or a voice note of a
+  meeting, followed by its `meeting_capture` with `photo` or `audio` and the asset `assets/images/<name>` or
+  `assets/audio/<name>`), `POST /api/push/subscribe` (kinds `remind`, `decision`, `meeting`, `meeting_end`; a notice of
+  a meeting opens the page with `?meeting=<id>`), `POST /auth/exchange`.
 
 ## 2. Filter by class for the phone (MOB-02) — done
 

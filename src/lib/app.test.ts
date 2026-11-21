@@ -70,7 +70,7 @@ function sourceFor(fake: FakeSource, dead: Set<string | null>): (token: string |
       path: (id) => gate(() => fake.path(id)),
       write: (id, op) => gate(() => fake.write(id, op)),
       donePreview: (id) => gate(() => fake.donePreview(id)),
-      upload: (id, file, name) => gate(() => fake.upload(id, file, name)),
+      upload: (id, file, name, kind) => gate(() => fake.upload(id, file, name, kind)),
       pushKey: () => gate(() => fake.pushKey()),
       pushSubscribe: (body) => gate(() => fake.pushSubscribe(body)),
       pushUnsubscribe: () => gate(() => fake.pushUnsubscribe()),
@@ -229,6 +229,84 @@ describe('App on the synthetic vault', () => {
     expect(app.meetingView?.minutes.map((m) => m.text)).toContain('Aufgabe: Milch kaufen');
     expect(await app.captureLine('text', '   ')).toBe(false);
     expect(fake.writes).toHaveLength(1);
+  });
+
+  it('a photo goes into the minutes of the meeting: the file to the meeting, then its line', async () => {
+    const fake = new FakeSource();
+    const app = new App(deps(fake, { fileStore: memoryFileStore() }));
+    await app.start(null);
+    await app.openMeeting(app.meetings!.find((m) => m.id === 'garden/zaun-besprechen')!);
+    const photo = new Blob(['jpeg'], { type: 'image/jpeg' });
+    expect(await app.captureMedia({ blob: photo, kind: 'photo' })).toBe(true);
+    // The name is made from the local time of the phone.
+    const name = fake.uploads[0]?.name ?? '';
+    expect(name).toMatch(/^photo-2026-01-01-[0-9]{4}[.]jpg$/);
+    expect(fake.uploads).toEqual([{ id: 'garden/zaun-besprechen', name, type: 'image/jpeg', size: 4, kind: 'image' }]);
+    const op = fake.writes[0]?.op;
+    expect(op).toMatchObject({ op: 'meeting_capture', id: 'garden/zaun-besprechen', entry: { kind: 'photo', asset: `assets/images/${name}` } });
+    expect(app.pending).toEqual([]);
+    expect(app.meetingView?.minutes.at(-1)?.text).toBe(`![${name}](assets/images/${name})`);
+  });
+
+  it('a voice note goes into the minutes as audio; a file that is no photo is refused before anything is sent', async () => {
+    const fake = new FakeSource();
+    const app = new App(deps(fake, { fileStore: memoryFileStore() }));
+    await app.start(null);
+    await app.openMeeting(app.meetings![0]!);
+    expect(await app.captureMedia({ blob: new Blob(['<b>'], { type: 'text/html' }), kind: 'photo' })).toBe(false);
+    expect(app.fileProblem).toBe('wrong_type');
+    expect(await app.captureMedia({ blob: new Blob(['ogg'], { type: 'audio/webm' }), kind: 'voice' })).toBe(true);
+    expect(fake.uploads[0]).toMatchObject({ id: 'kitchen/einkauf-planen', kind: 'audio' });
+    expect(fake.writes[0]?.op).toMatchObject({ entry: { kind: 'audio', asset: `assets/audio/${fake.uploads[0]?.name ?? ''}` } });
+  });
+
+  it('a device that may not change sends no file of a meeting', async () => {
+    const fake = new FakeSource();
+    fake.deviceLevel = 'create';
+    const app = new App(deps(fake, { fileStore: memoryFileStore() }));
+    await app.start(null);
+    await app.openMeeting(app.meetings![0]!);
+    expect(await app.captureMedia({ blob: new Blob(['jpeg'], { type: 'image/jpeg' }), kind: 'photo' })).toBe(false);
+    expect(app.notice).toMatchObject({ key: 'task.not_allowed' });
+    expect(fake.uploads).toEqual([]);
+  });
+
+  it('ticks a participant the hub gave by name, and only one it gave', async () => {
+    const fake = new FakeSource();
+    const app = new App(deps(fake));
+    await app.start(null);
+    await app.openMeeting(app.meetings!.find((m) => m.id === 'garden/zaun-besprechen')!);
+    expect(app.meetingView?.participants).toEqual([
+      { n: 1, name: 'Anna Berger', present: false },
+      { n: 2, name: 'Ben Huber', present: true },
+    ]);
+    expect(await app.attend('Anna Berger', true)).toBe(true);
+    expect(fake.writes[0]?.op).toEqual({ op: 'meeting_attend', id: 'garden/zaun-besprechen', name: 'Anna Berger', present: true });
+    expect(app.meetingView?.participants[0]?.present).toBe(true);
+    expect(await app.attend('Someone Else', true)).toBe(false);
+    expect(fake.writes).toHaveLength(1);
+    // The internal meeting of the kitchen has no participants on the phone: nothing to tick.
+    await app.openMeeting(app.meetings!.find((m) => m.id === 'kitchen/einkauf-planen')!);
+    expect(app.meetingView?.participants).toEqual([]);
+  });
+
+  it('a tapped notice of a meeting opens the meeting; one the hub does not give is said', async () => {
+    const fake = new FakeSource();
+    const app = new App(deps(fake));
+    await app.start(null);
+    await app.openMeetingById('garden/zaun-besprechen');
+    expect(app.screen).toBe('meeting');
+    expect(app.meetingView?.meeting.id).toBe('garden/zaun-besprechen');
+    // Not in the list of the coming days: read from the hub.
+    app.meetings = [];
+    app.screen = 'today';
+    await app.openMeetingById('kitchen/einkauf-planen');
+    expect(app.screen).toBe('meeting');
+    expect(app.meetingView?.meeting.title).toBe('Einkauf planen');
+    app.screen = 'today';
+    await app.openMeetingById('vault-secret/geheim');
+    expect(app.screen).toBe('today');
+    expect(app.notice).toMatchObject({ key: 'push.meeting_gone' });
   });
 
   it('sends no change of a task whose version it does not know, and says so (MOB-08)', async () => {
@@ -836,11 +914,27 @@ describe('notices of the hub', () => {
     expect(b.state.asked).toBe(0);
     await app.enablePush();
     expect(app.pushState).toBe('on');
-    expect(fake.pushed).toEqual({ endpoint: 'https://push.example.org/x', p256dh: 'p', auth: 'a', kinds: ['remind', 'decision'] });
+    expect(fake.pushed).toEqual({ endpoint: 'https://push.example.org/x', p256dh: 'p', auth: 'a', kinds: ['remind', 'decision', 'meeting', 'meeting_end'] });
     await app.disablePush();
     expect(app.pushState).toBe('off');
     expect(fake.pushed).toBeNull();
     expect(b.state.subscribed).toBe(false);
+  });
+
+  it('notices that are on get the kinds of the meetings told to the hub once, without asking', async () => {
+    const fake = new FakeSource();
+    const b = browser();
+    b.state.subscribed = true;
+    b.state.permission = 'granted';
+    const push: PushAccess = { ...b.push, current: async () => ({ endpoint: 'https://push.example.org/old', p256dh: 'p', auth: 'a' }) };
+    const app = new App(deps(fake, { push }));
+    await app.start(null);
+    expect(app.pushState).toBe('on');
+    expect(b.state.asked).toBe(0);
+    expect(fake.pushed).toEqual({ endpoint: 'https://push.example.org/old', p256dh: 'p', auth: 'a', kinds: ['remind', 'decision', 'meeting', 'meeting_end'] });
+    fake.pushed = null;
+    await app.refresh();
+    expect(fake.pushed).toBeNull();
   });
 
   it('a refused permission turns nothing on, and the hub keeps nothing', async () => {

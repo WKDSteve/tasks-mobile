@@ -77,6 +77,22 @@ export function assetName(kind: AttachmentKind, type: string, at: Date, n: numbe
   return `${kind}-${stamp}${n > 1 ? `-${n}` : ''}.${ext}`;
 }
 
+/**
+ * Where a photo or a voice note of a meeting lies in the meeting's folder: the folder of its kind (the hub uploads it
+ * with `kind=image` or `kind=audio` and `exact=1`, so the name stays as the phone made it).
+ */
+export function meetingAsset(ref: AttachmentRef): string {
+  return `${ref.kind === 'photo' ? 'assets/images' : 'assets/audio'}/${ref.name}`;
+}
+
+/** Is `asset` a file of the meeting the line of `kind` may name: in the folder of its kind, a name the phone makes? */
+export function isMeetingAsset(kind: 'photo' | 'audio', asset: unknown): asset is string {
+  const folder = kind === 'photo' ? 'assets/images/' : 'assets/audio/';
+  if (typeof asset !== 'string' || !asset.startsWith(folder)) return false;
+  const name = asset.slice(folder.length);
+  return /^[A-Za-z0-9_][A-Za-z0-9._-]{0,119}$/.test(name) && !name.includes('..');
+}
+
 /** A size for people: `820 KB`, `3.4 MB`. */
 export function sizeText(bytes: number): string {
   if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;

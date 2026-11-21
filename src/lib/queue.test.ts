@@ -60,8 +60,8 @@ function source(answers: ((op: QueueOp) => OpOutcome | Error)[]): DataSource & {
     pushKey: async () => 'unused',
     pushSubscribe: async () => {},
     pushUnsubscribe: async () => {},
-    upload: async (id, file, name) => {
-      calls.push(`upload ${id} ${name} ${file.size}`);
+    upload: async (id, file, name, kind) => {
+      calls.push(`upload ${id} ${name} ${file.size}${kind ? ` ${kind}` : ''}`);
       const next = answers.shift();
       if (!next) throw new Error('no answer left');
       const answer = next({ op: 'upload', id, file: { key: 'k0000000', name, type: file.type, size: file.size, kind: 'photo' } });
@@ -99,6 +99,68 @@ describe('WriteQueue', () => {
     const q = new WriteQueue(memory(), ids, clock);
     await q.add({ op: 'meeting_capture', id: 'garden/m', entry: { kind: 'task', text: 'Mail', at: '10:00' } }, 'garden', 'M');
     expect(q.items).toHaveLength(1);
+  });
+
+  it('a photo of a meeting goes to the meeting as an image, then its line of the minutes names it', async () => {
+    const files = memoryFileStore();
+    await files.put('file-0002', new Blob(['jpeg']));
+    const q = new WriteQueue(memory(), ids, clock, () => {}, files);
+    const photo: AttachmentRef = { key: 'file-0002', name: 'photo-2026-01-01-1000.jpg', type: 'image/jpeg', size: 4, kind: 'photo' };
+    await q.addMeetingFile('garden/m', 'garden', 'M', photo, '10:00');
+    const seen: QueueOp[] = [];
+    const src = source([() => ({ ok: true, id: 'garden/m' }), (op) => (seen.push(op), { ok: true, id: 'garden/m' })]);
+    expect(await q.flush(src)).toEqual({ sent: 2, stopped: null });
+    expect(src.calls[0]).toBe('upload garden/m photo-2026-01-01-1000.jpg 4 image');
+    expect(seen).toEqual([
+      { op: 'meeting_capture', id: 'garden/m', entry: { kind: 'photo', asset: 'assets/images/photo-2026-01-01-1000.jpg', at: '10:00' } },
+    ]);
+    expect(q.items).toEqual([]);
+    expect(files.files.size).toBe(0);
+  });
+
+  it('a voice note of a meeting is an audio file; one that arrived with a lost answer still gets its line', async () => {
+    const files = memoryFileStore();
+    await files.put('file-0003', new Blob(['ogg']));
+    const q = new WriteQueue(memory(), ids, clock, () => {}, files);
+    const voice: AttachmentRef = { key: 'file-0003', name: 'voice-2026-01-01-1000.webm', type: 'audio/webm', size: 3, kind: 'voice' };
+    await q.addMeetingFile('garden/m', 'garden', 'M', voice);
+    const seen: QueueOp[] = [];
+    const src = source([
+      () => ({ ok: false, code: 'exists', message: 'attach: the task has an asset of this name already', retryable: false }),
+      (op) => (seen.push(op), { ok: true, id: 'garden/m' }),
+    ]);
+    await q.flush(src);
+    expect(src.calls[0]).toBe('upload garden/m voice-2026-01-01-1000.webm 3 audio');
+    expect(seen).toEqual([{ op: 'meeting_capture', id: 'garden/m', entry: { kind: 'audio', asset: 'assets/audio/voice-2026-01-01-1000.webm' } }]);
+  });
+
+  it('a file of a meeting the hub refused stays, and no line of the minutes follows it', async () => {
+    const files = memoryFileStore();
+    await files.put('file-0004', new Blob(['x']));
+    const q = new WriteQueue(memory(), ids, clock, () => {}, files);
+    const photo: AttachmentRef = { key: 'file-0004', name: 'p.jpg', type: 'image/jpeg', size: 1, kind: 'photo' };
+    await q.addMeetingFile('garden/m', 'garden', 'M', photo);
+    await q.flush(source([() => new HubRefused(403, 'not_for_devices', 'a phone attaches only to a task')]));
+    expect(q.items).toHaveLength(1);
+    expect(q.items[0]).toMatchObject({ state: 'refused', code: 'not_for_devices', op: { op: 'meeting_file' } });
+    expect(files.files.has('file-0004')).toBe(true);
+  });
+
+  it('reads back a line of a photo only with a file of the meeting in the folder of its kind, and a tick by name', () => {
+    const item = (op: unknown) => ({ clientOpId: 'id-00000077', op, scope: 'garden', label: 'M', queuedAt: '2026-01-01T00:00:00Z', state: 'waiting' });
+    const good = { op: 'meeting_capture', id: 'garden/m', entry: { kind: 'photo', asset: 'assets/images/p.jpg' } };
+    expect(restore([item(good)], null)).toHaveLength(1);
+    for (const asset of ['assets/audio/p.jpg', 'assets/images/../x.md', 'assets/images/a/b.jpg', '../x.jpg', 'assets/images/', 'assets/images/.p']) {
+      expect(restore([item({ ...good, entry: { kind: 'photo', asset } })], null), asset).toEqual([]);
+    }
+    expect(restore([item({ ...good, entry: { kind: 'photo', asset: 'assets/images/p.jpg', text: 'x' } })], null)).toEqual([]);
+    expect(restore([item({ op: 'meeting_capture', id: 'garden/m', entry: { kind: 'text', text: 'x', asset: 'assets/images/p.jpg' } })], null)).toEqual([]);
+    expect(restore([item({ op: 'meeting_attend', id: 'garden/m', name: 'Anna', present: true })], null)).toHaveLength(1);
+    expect(restore([item({ op: 'meeting_attend', id: 'garden/m', name: '', present: true })], null)).toEqual([]);
+    expect(restore([item({ op: 'meeting_attend', id: 'garden/m', name: 'Anna', present: 'yes' })], null)).toEqual([]);
+    const file = { key: 'file-0005', name: 'p.jpg', type: 'image/jpeg', size: 1, kind: 'photo' };
+    expect(restore([item({ op: 'meeting_file', id: 'garden/m', file })], null)).toHaveLength(1);
+    expect(restore([item({ op: 'meeting_file', id: 'secret/m', file })], null)).toEqual([]);
   });
 
   it('queues a tick of a learning point only with the version of the path that was seen (MOB-08)', async () => {

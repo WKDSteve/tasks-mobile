@@ -6,6 +6,10 @@
 // What only tasks has is here: a new task may carry files (a photo, a voice note). They wait in the `FileStore`, named
 // by the `new` (`files`); once the engine made the task, each becomes an `upload` of its own in the place of the `new`,
 // to the id the engine gave. A file that could not be sent stays visible in the queue; the task stays as it is.
+//
+// A photo or a voice note of a meeting (`meeting_file`) is one write in the queue too: the file goes to the meeting with
+// its kind (`image`, `audio`), and once the hub took it, the line of the minutes that names it (`meeting_capture` with
+// `photo` or `audio`) follows in its place, the same way.
 
 import {
   WriteQueue as KitQueue,
@@ -15,11 +19,11 @@ import {
   type QueueStore,
   type SendOutcome,
 } from 'appkit-ui/queue';
-import { memoryFileStore, restoreRef, type AttachmentRef, type FileStore } from './attach';
+import { isMeetingAsset, meetingAsset, memoryFileStore, restoreRef, type AttachmentRef, type FileStore } from './attach';
 import { isAreaName, isTaskId } from './parse';
 import { AnswerLost, HubRefused, Unpaired, Unreachable, type DataSource } from './source';
 import type { Op } from './types';
-import { CAPTURE_KINDS, POINT_STATES, STATUSES } from './types';
+import { CAPTURE_KINDS, MEDIA_CAPTURE_KINDS, POINT_STATES, STATUSES, type MediaCaptureKind } from './types';
 
 export type { FlushReport, PendingState, QueueStore };
 
@@ -33,8 +37,17 @@ export interface UploadOp {
   file: AttachmentRef;
 }
 
+/** A photo or a voice note of a meeting: the file first, then the line of the minutes that names it. */
+export interface MeetingFileOp {
+  op: 'meeting_file';
+  id: string;
+  file: AttachmentRef;
+  /** The time of the phone when it was taken (`HH:MM`), for the line of the minutes. */
+  at?: string;
+}
+
 /** What the queue sends: an operation of the engine, or a file. */
-export type QueueOp = Exclude<Op, { op: 'new' }> | NewOp | UploadOp;
+export type QueueOp = Exclude<Op, { op: 'new' }> | NewOp | UploadOp | MeetingFileOp;
 
 /** A write in the queue; its `scope` is the area the write goes to (a new task) or is in (a change). */
 export type Pending = KitPending<QueueOp>;
@@ -71,22 +84,39 @@ function validOp(value: unknown): value is QueueOp {
     case 'meeting_capture': {
       // A line of the minutes is appended, never a rewrite: it needs no version (two devices at once lose nothing).
       const entry = op['entry'] as Record<string, unknown> | undefined;
+      if (!isTaskId(op['id']) || typeof entry !== 'object' || entry === null || !validAt(entry['at'])) return false;
+      // A photo or a voice note names its file of the meeting, in the folder of its kind, and nothing else.
+      if ((MEDIA_CAPTURE_KINDS as readonly unknown[]).includes(entry['kind']))
+        return isMeetingAsset(entry['kind'] as MediaCaptureKind, entry['asset']) && entry['text'] === undefined;
       return (
-        isTaskId(op['id']) &&
-        typeof entry === 'object' &&
-        entry !== null &&
         (CAPTURE_KINDS as readonly unknown[]).includes(entry['kind']) &&
+        entry['asset'] === undefined &&
         typeof entry['text'] === 'string' &&
         entry['text'].length > 0 &&
-        entry['text'].length <= 2000 &&
-        (entry['at'] === undefined || (typeof entry['at'] === 'string' && /^\d{2}:\d{2}$/.test(entry['at'])))
+        entry['text'].length <= 2000
       );
     }
+    case 'meeting_attend':
+      // A tick by name: no version, a second tick of the same person changes nothing.
+      return (
+        isTaskId(op['id']) &&
+        typeof op['name'] === 'string' &&
+        op['name'].length > 0 &&
+        op['name'].length <= 200 &&
+        typeof op['present'] === 'boolean'
+      );
+    case 'meeting_file':
+      return isTaskId(op['id']) && restoreRef(op['file']) !== null && validAt(op['at']);
     case 'upload':
       return isTaskId(op['id']) && restoreRef(op['file']) !== null;
     default:
       return false;
   }
+}
+
+/** A time of the phone, `HH:MM`, or none. */
+function validAt(at: unknown): boolean {
+  return at === undefined || (typeof at === 'string' && /^\d{2}:\d{2}$/.test(at));
 }
 
 /** A change of a task is queued only with the version the person saw (MOB-08); a new task and finishing need none. */
@@ -126,6 +156,11 @@ function settle(items: Pending[]): Pending[] {
     if (op.op === 'upload') {
       if (!op.id.startsWith(`${item.scope}/`)) continue;
       out.push({ ...item, op: { op: 'upload', id: op.id, file: restoreRef(op.file)! } });
+    } else if (op.op === 'meeting_file') {
+      if (!op.id.startsWith(`${item.scope}/`)) continue;
+      const kept: MeetingFileOp = { op: 'meeting_file', id: op.id, file: restoreRef(op.file)! };
+      if (op.at !== undefined) kept.at = op.at;
+      out.push({ ...item, op: kept });
     } else if (op.op === 'new') {
       // A file that does not read back is dropped (its blob is collected on load).
       const files = (op.files ?? []).map(restoreRef).filter((f): f is AttachmentRef => f !== null);
@@ -158,7 +193,7 @@ export function filesOf(item: Pending): AttachmentRef[] {
 
 /** The keys of the files a write names. */
 function keysOf(item: Pending): string[] {
-  if (item.op.op === 'upload') return [item.op.file.key];
+  if (item.op.op === 'upload' || item.op.op === 'meeting_file') return [item.op.file.key];
   return filesOf(item).map((f) => f.key);
 }
 
@@ -222,6 +257,31 @@ export class WriteQueue {
     return this.kit.add(queued, area, label);
   }
 
+  /**
+   * A photo or a voice note for the meeting `id` (kept in the `FileStore` already): sent to the meeting, then the line
+   * of the minutes that names it.
+   */
+  async addMeetingFile(id: string, area: string, label: string, file: AttachmentRef, at?: string): Promise<Pending> {
+    const op: MeetingFileOp = { op: 'meeting_file', id, file };
+    if (at !== undefined) op.at = at;
+    return this.kit.add(op, area, label);
+  }
+
+  /** The line of the minutes that names a file of a meeting the hub took, in the place of the file in the queue. */
+  private captureOf(item: Pending, op: MeetingFileOp): Pending {
+    const kind: MediaCaptureKind = op.file.kind === 'photo' ? 'photo' : 'audio';
+    const entry: { kind: MediaCaptureKind; asset: string; at?: string } = { kind, asset: meetingAsset(op.file) };
+    if (op.at !== undefined) entry.at = op.at;
+    return {
+      clientOpId: this.newId(),
+      op: { op: 'meeting_capture', id: op.id, entry },
+      scope: item.scope,
+      label: item.label,
+      queuedAt: this.now().toISOString(),
+      state: 'waiting',
+    };
+  }
+
   /** The files of a new task become uploads to the id the engine gave, in its place in the queue. */
   private followers(item: Pending, id: string | null): Pending[] {
     return filesOf(item).map((file) => ({
@@ -241,10 +301,13 @@ export class WriteQueue {
   private async sendOne(source: DataSource, clientOpId: string, op: QueueOp): Promise<SendOutcome> {
     let outcome;
     try {
-      if (op.op === 'upload') {
+      if (op.op === 'upload' || op.op === 'meeting_file') {
         const blob = await this.fileStore.get(op.file.key);
         if (!blob) return { kind: 'refused', code: 'file_gone', message: 'the file is no longer on this phone' };
-        outcome = await source.upload(op.id, blob, op.file.name);
+        outcome =
+          op.op === 'upload'
+            ? await source.upload(op.id, blob, op.file.name)
+            : await source.upload(op.id, blob, op.file.name, op.file.kind === 'photo' ? 'image' : 'audio');
       } else if (op.op === 'new') {
         const { files: _files, ...sent } = op;
         outcome = await source.write(clientOpId, sent);
@@ -258,6 +321,14 @@ export class WriteQueue {
     // `exact=1` (`hubSource.ts`, tasks.nvim b32f653), so the engine says `exists` instead of attaching it a second time.
     if (!outcome.ok && op.op === 'upload' && outcome.code === 'exists') {
       await this.fileStore.delete(op.file.key);
+      return { kind: 'done' };
+    }
+    // A file of a meeting the hub took (now, or with a try whose answer was lost): its line of the minutes follows.
+    if (op.op === 'meeting_file' && (outcome.ok || outcome.code === 'exists')) {
+      await this.fileStore.delete(op.file.key);
+      const at = this.kit.items.findIndex((i) => i.clientOpId === clientOpId);
+      const item = this.kit.items[at];
+      if (item) this.kit.items.splice(at + 1, 0, this.captureOf(item, op));
       return { kind: 'done' };
     }
     if (!outcome.ok) {

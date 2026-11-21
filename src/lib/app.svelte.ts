@@ -414,6 +414,7 @@ export class App {
       if (this.notice?.tone === 'error' && this.notice.key.startsWith('error.')) this.notice = null;
       await this.deps.viewStore.save({ view, at: this.viewAt });
       await this.readMeetings(source);
+      await this.renewPush(source);
     } catch (error) {
       if (error instanceof Unpaired) {
         if (retry && (await this.renew())) return this.load(false);
@@ -508,6 +509,93 @@ export class App {
     this.busy = true;
     try {
       const item = await this.enqueue({ op: 'meeting_capture', id: meeting.id, entry: { kind, text: line, at } }, meeting.area, meeting.title);
+      if (!item) return false;
+      await this.readMeeting();
+      return true;
+    } finally {
+      this.busy = false;
+    }
+  }
+
+  /**
+   * A tapped notice of a meeting (`meeting`, `meeting_end`) opens it: from the list when it is there, else read from the
+   * hub (the notice carries the id only, PWA-06). Offline, or a meeting the hub does not give this phone, is said.
+   */
+  async openMeetingById(id: string): Promise<void> {
+    const brief = this.meetings?.find((m) => m.id === id);
+    if (brief) return this.openMeeting(brief);
+    if (!this.source || this.connection !== 'live') {
+      this.notice = { key: 'push.meeting_gone', tone: 'info' };
+      return;
+    }
+    try {
+      const detail = await this.source.meeting(id);
+      this.openedMeeting = detail.meeting;
+      this.meetingView = detail;
+      this.screen = 'meeting';
+    } catch (error) {
+      if (error instanceof HubRefused && error.status === 404) this.notice = { key: 'push.meeting_gone', tone: 'info' };
+      else this.failed(error);
+    }
+  }
+
+  /** The time of the phone, `HH:MM`, for a line of the minutes. */
+  private clockNow(): string {
+    const now = this.deps.now();
+    return `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+  }
+
+  /**
+   * A photo or a voice note into the minutes of the opened meeting: the file waits on the phone, goes to the meeting
+   * (`upload` with its kind), and the line that names it follows (`meeting_capture` with `photo` or `audio`). Both
+   * change the meeting: `change`.
+   */
+  async captureMedia(file: NewAttachment): Promise<boolean> {
+    const meeting = this.meetingView?.meeting;
+    if (!meeting) return false;
+    if (this.fromFile) {
+      this.notice = { key: 'file.read_only', tone: 'info' };
+      return false;
+    }
+    if (!this.may('change')) {
+      this.notice = { key: 'task.not_allowed', tone: 'error' };
+      return false;
+    }
+    if (this.checkFile(file, 0) !== null) return false;
+    if (this.queue.full) {
+      this.notice = { key: 'queue.full', tone: 'error' };
+      return false;
+    }
+    this.busy = true;
+    try {
+      const refs = await this.keepFiles([file]);
+      const ref = refs?.[0];
+      if (!ref) return false;
+      try {
+        await this.queue.addMeetingFile(meeting.id, meeting.area, meeting.title, ref, this.clockNow());
+      } catch {
+        await this.queue.fileStore.delete(ref.key);
+        this.notice = { key: 'queue.full', tone: 'error' };
+        return false;
+      }
+      if (this.source && this.connection !== 'offline') await this.refresh();
+      await this.readMeeting();
+      return true;
+    } finally {
+      this.busy = false;
+    }
+  }
+
+  /**
+   * Tick a participant of the opened meeting present (or not): by name, through the queue. Only offered when the hub
+   * gave the participants (a public area, or an internal one the PC released); the hub judges it again.
+   */
+  async attend(name: string, present: boolean): Promise<boolean> {
+    const meeting = this.meetingView?.meeting;
+    if (!meeting || !this.meetingView?.participants.some((p) => p.name === name)) return false;
+    this.busy = true;
+    try {
+      const item = await this.enqueue({ op: 'meeting_attend', id: meeting.id, name, present }, meeting.area, meeting.title);
       if (!item) return false;
       await this.readMeeting();
       return true;
@@ -1134,6 +1222,26 @@ export class App {
       }
     }
     if (say) this.notice = { key: 'push.off', tone: 'info' };
+  }
+
+  /** The kinds were told to the hub in this run of the page (once: the subscription of the browser stays the same). */
+  private pushKindsTold = false;
+
+  /**
+   * Notices that are on keep the kinds of this page: a subscription made before a kind was added (the meetings) is
+   * told to the hub again with all of them, once per run of the page, without asking anything (the permission is
+   * there). A hub that does not take it leaves the notices as they were.
+   */
+  private async renewPush(source: DataSource): Promise<void> {
+    const push = this.deps.push;
+    if (this.pushKindsTold || this.pushState !== 'on' || !push?.current) return;
+    this.pushKindsTold = true;
+    try {
+      const sub = await push.current();
+      if (sub) await source.pushSubscribe({ ...sub, kinds: [...PUSH_KINDS] });
+    } catch (error) {
+      if (error instanceof Unpaired) throw error;
+    }
   }
 
   /** A tapped notice opens its task; a task that is no longer in the list is said, not guessed. */

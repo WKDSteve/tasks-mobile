@@ -6,7 +6,7 @@ import { areaClasses, deviceLevel, donePreview, hubHello, meetingDetail, meeting
 import { pushKey, type PushSubscriptionBody } from './push';
 import type { Right } from './rights';
 import { AnswerLost, HubRefused, Unpaired, Unreachable, type DataSource } from './source';
-import type { ConfirmRequest, DataClass, DonePreview, HubHello, MeetingBrief, MeetingDetail, Op, OpErrorCode, OpOutcome, PathBrief, PathDetail, TaskDetail, TestingRun, VaultView } from './types';
+import type { ConfirmRequest, DataClass, DonePreview, HubHello, MeetingBrief, MeetingDetail, Op, OpErrorCode, OpOutcome, PathBrief, PathDetail, TaskDetail, TestingRun, UploadKind, VaultView } from './types';
 
 /** How long a read may take before the page calls the hub unreachable (MSEC-08). */
 export const READ_TIMEOUT_MS = 15_000;
@@ -146,12 +146,14 @@ export class HubSource implements DataSource {
     return opOutcome(await this.body(response));
   }
 
-  async upload(id: string, file: Blob, name: string): Promise<OpOutcome> {
+  async upload(id: string, file: Blob, name: string, kind?: UploadKind): Promise<OpOutcome> {
     let response: Response;
     try {
       // `exact=1`: a name the task has already is `exists`, not a second file with a counter (a file sent again after its
       // answer was lost arrives once); the desktop page keeps the counter.
-      response = await this.client.request(`/api/tasks/upload?id=${idParam(id)}&exact=1`, {
+      // `kind`: the folder of a photo or a voice note of a meeting (`assets/images`, `assets/audio`).
+      const folder = kind ? `&kind=${kind}` : '';
+      response = await this.client.request(`/api/tasks/upload?id=${idParam(id)}&exact=1${folder}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/octet-stream', 'X-Upload-Name': encodeURIComponent(name) },
         body: file,

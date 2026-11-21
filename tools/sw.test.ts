@@ -87,6 +87,28 @@ describe('the service worker shows a notice', () => {
     expect(bad.opened).toEqual(['https://pc.example.ts.net/m/']);
   });
 
+  it('a notice of a meeting names only its kind, and a tap opens the meeting, not a task', async () => {
+    const w = worker();
+    await w.fire('push', pushEvent({ kind: 'meeting', id: 'garden/zaun-besprechen' }));
+    await w.fire('push', pushEvent({ kind: 'meeting_end', id: 'garden/zaun-besprechen' }));
+    expect(w.shown.map((s) => s.options['body'])).toEqual(['Ein Meeting beginnt bald.', 'Ein Meeting ist vorbei: Ergebnis eintragen oder abschließen?']);
+    expect(w.shown[0]!.options).toMatchObject({ tag: 'meeting:garden/zaun-besprechen', data: { id: 'garden/zaun-besprechen', kind: 'meeting' } });
+    const en = worker('en-US');
+    await en.fire('push', pushEvent({ kind: 'meeting', id: 'garden/zaun-besprechen' }));
+    expect(en.shown[0]!.options['body']).toBe('A meeting begins soon.');
+    const notification = (kind: unknown, id: unknown) => ({ data: { kind, id }, close: () => {} });
+    await w.fire('notificationclick', { notification: notification('meeting_end', 'garden/zaun-besprechen') });
+    expect(w.opened).toEqual(['https://pc.example.ts.net/m/?meeting=garden%2Fzaun-besprechen']);
+    const page = { url: 'https://pc.example.ts.net/m/', posted: [] as unknown[], focused: false };
+    const open = worker('de', [page]);
+    await open.fire('notificationclick', { notification: notification('meeting', 'garden/zaun-besprechen') });
+    expect(page).toMatchObject({ posted: [{ meeting: 'garden/zaun-besprechen' }], focused: true });
+    // A kind the worker does not know opens as a task (the id is checked the same), never as something else.
+    const odd = worker();
+    await odd.fire('notificationclick', { notification: notification('ci_red', 'garden/x') });
+    expect(odd.opened).toEqual(['https://pc.example.ts.net/m/?task=garden%2Fx']);
+  });
+
   it('the worker knows the same kinds as the page', () => {
     expect(readFileSync('public/sw.js', 'utf8')).toContain(`const KINDS = [${PUSH_KINDS.map((k) => `'${k}'`).join(', ')}];`);
   });
