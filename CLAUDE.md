@@ -49,3 +49,4 @@ node --check public/sw.js
 - `legacy-scan` läuft über den Lockfile (exakte devDependency, es gilt die Quarantäne aus `pnpm-workspace.yaml`):
   `DISABLE_TELEMETRY=1 pnpm exec modern-web-guidance legacy-scan src --json`; die CI führt ihn als Hinweis aus.
   `.claude/settings.json` schaltet die Telemetrie ab und erlaubt nur `npx -y modern-web-guidance@latest *`.
+- Git: In einer Cloud-Sitzung (`CLAUDE_CODE_REMOTE` gesetzt) nie auf `main` pushen, nur auf den eigenen Branch `claude/…`; gelandet wird lokal per Rebase, der Geräteschlüssel signiert dabei (`GIT-09`). Das „auf main pushen“ (`GIT-01`) gilt nur lokal.
