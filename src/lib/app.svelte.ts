@@ -630,6 +630,8 @@ export class App {
   learnNoSteps = $state(false);
   learnNoSeries = $state(false);
   learnPartial = $state(false);
+  /** The paths whose step was ticked and not read again yet (offline it waits in the queue): not ticked twice. */
+  learnTicked = $state<ReadonlySet<string>>(new Set());
 
   /** The day of this device, the frame of the period, and its window as a key. */
   get learnToday(): string {
@@ -684,6 +686,7 @@ export class App {
       this.learnSteps = read.steps;
       this.learnPartial = read.partial;
       this.learnNoSteps = false;
+      this.learnTicked = new Set();
     } catch (error) {
       // A hub that keeps them on the PC: the page says so and shows the rest.
       if (error instanceof HubRefused) this.learnNoSteps = true;
@@ -698,6 +701,9 @@ export class App {
     const key = `${since}..${until}`;
     try {
       const series = await source.learnHistory(since, until);
+      // A late answer for a period left since does not cover the one now chosen.
+      const shown = this.learnFrame.ask;
+      if (key !== `${shown.since}..${shown.until}`) return;
       this.learnSeries = { key, series };
       this.learnNoSeries = false;
     } catch (error) {
@@ -708,11 +714,13 @@ export class App {
 
   /**
    * Tick the next point of a path from the page Lernen (`node_set` on the version of the path last read, MOB-08):
-   * learned at once, seen with a reason. Through the queue like every write; the steps and the tile are read again
-   * once the hub answered (MOB-07).
+   * learned at once, seen with a reason; a point under `{safety}` only `confirmed` (the person said yes on the page),
+   * and then with the engine's `ack`. Through the queue like every write; the steps and the tile are read again once
+   * the hub answered (MOB-07).
    */
-  async tickStep(step: LearnStep, state: 'learned' | 'seen', reason?: string): Promise<void> {
-    if (step.key === null) return;
+  async tickStep(step: LearnStep, state: 'learned' | 'seen', reason?: string, confirmed = false): Promise<void> {
+    if (step.key === null || this.learnTicked.has(step.path)) return;
+    if (step.safety && !confirmed) return;
     const etag = this.paths?.find((p) => p.id === step.path)?.etag ?? null;
     const why = reason?.trim();
     const op: Op = {
@@ -721,11 +729,13 @@ export class App {
       point: step.key,
       state,
       ...(why ? { reason: why.slice(0, 500) } : {}),
+      ...(step.safety ? { ack: true as const } : {}),
       ...(etag ? { if_match: etag } : {}),
     };
     this.busy = true;
     try {
       const item = await this.enqueue(op, step.area, `${step.title}: ${step.label}`.slice(0, 200));
+      this.learnTicked = new Set([...this.learnTicked, step.path]);
       await this.readLearn();
       this.sayConflict(item);
     } finally {

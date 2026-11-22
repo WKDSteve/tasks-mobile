@@ -38,6 +38,19 @@ test('the page Lernen: the period, the figures in words, a step ticked learned a
   await save.click();
   await expect(step).toContainText('Async verstehen');
 
+  // a point under {safety}: a yes first, then the reason; Cancel leaves it open
+  await expect(step).toContainText('Safety: confirm first');
+  await step.getByRole('button', { name: 'Learned: Async verstehen' }).click();
+  await expect(step.getByRole('group', { name: 'This point concerns safety. Mark it learned?' })).toBeVisible();
+  await step.getByRole('button', { name: 'Cancel' }).click();
+  await step.getByRole('button', { name: 'Seen: Async verstehen' }).click();
+  await step.getByRole('button', { name: 'Yes, mark it' }).click();
+  await step.getByLabel('Why only seen?').fill('nur gelesen');
+  await step.getByRole('button', { name: 'Save' }).click();
+  await expect(page.getByTestId('learn-steps-none')).toBeVisible();
+  // the figures stand in one live region that stays
+  await expect(mine.getByTestId('learn-live')).toHaveAttribute('aria-live', 'polite');
+
   // kept on the device
   await page.reload();
   await page.getByRole('button', { name: 'Learn' }).click();

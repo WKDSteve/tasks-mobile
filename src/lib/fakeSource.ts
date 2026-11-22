@@ -189,6 +189,8 @@ interface FakePoint {
   note?: string;
   state: string;
   reason?: string;
+  /** Under `{safety}`: closed only with `ack` (the engine's rule). */
+  safety?: true;
 }
 
 interface FakePath {
@@ -210,7 +212,7 @@ function initialPaths(): FakePath[] {
         { key: 'basics', label: 'Grundlagen', state: 'open' },
         { key: 'book', label: 'The Book lesen', parent: 1, link: 'https://doc.rust-lang.org/book/', note: 'Kapitel 1 bis 4', state: 'open' },
         { key: 'rustlings', label: 'Rustlings', parent: 1, state: 'open' },
-        { key: 'async', label: 'Async verstehen', state: 'open' },
+        { key: 'async', label: 'Async verstehen', state: 'open', safety: true },
       ],
     },
   ];
@@ -629,7 +631,18 @@ export class FakeSource implements DataSource, FakeControls {
           title: p.title,
           stage: 'doing',
           icon: { kind: 'emoji', value: '🦀' },
-          points: [{ index: p.points.indexOf(next) + 1, key: next.key, label: next.label, stage_index: 0, stage_label: stage, xp: 10, ...(next.link ? { link: next.link } : {}) }],
+          points: [
+            {
+              index: p.points.indexOf(next) + 1,
+              key: next.key,
+              label: next.label,
+              stage_index: 0,
+              stage_label: stage,
+              xp: 10,
+              ...(next.link ? { link: next.link } : {}),
+              ...(next.safety ? { safety: true } : {}),
+            },
+          ],
         },
       ];
     });
@@ -769,6 +782,8 @@ export class FakeSource implements DataSource, FakeControls {
         return this.result(false, p.id, { code: 'conflict', message: 'the file changed since it was read' });
       if ((op.state === 'seen' || op.state === 'dropped') && !op.reason)
         return this.result(false, p.id, { code: 'invalid_argument', message: 'node_set: seen and dropped need a reason' });
+      if (pt.safety && (op.state === 'learned' || op.state === 'seen') && op.ack !== true)
+        return this.result(false, p.id, { code: 'invalid_argument', message: 'node_set: a {safety} point needs ack' });
       const was = pt.state;
       pt.state = op.state;
       this.countToday(was, op.state);

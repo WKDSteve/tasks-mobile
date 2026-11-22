@@ -46,26 +46,39 @@
 
   const streakText = (n: number) => (n === 0 ? t('learn.streak_none') : n === 1 ? t('learn.streak_one') : t('learn.streak', { n }));
 
-  /** The step a reason or a yes is asked for. */
-  let asking = $state<{ path: string; kind: 'reason' | 'confirm' } | null>(null);
+  /**
+   * The step a yes or a reason is asked for: a point under {safety} asks yes first, for learned and for seen (the
+   * engine takes it only confirmed); seen then asks its reason.
+   */
+  let asking = $state<{ path: string; kind: 'reason' | 'confirm'; state: 'learned' | 'seen'; confirmed: boolean } | null>(null);
   let reason = $state('');
 
   async function learned(step: LearnStep): Promise<void> {
-    if (step.safety && asking?.path !== step.path) {
-      asking = { path: step.path, kind: 'confirm' };
+    if (step.safety) {
+      asking = { path: step.path, kind: 'confirm', state: 'learned', confirmed: false };
       return;
     }
     asking = null;
     await app.tickStep(step, 'learned');
   }
   function seen(step: LearnStep): void {
-    asking = { path: step.path, kind: 'reason' };
+    asking = { path: step.path, kind: step.safety ? 'confirm' : 'reason', state: 'seen', confirmed: false };
     reason = '';
   }
-  async function saveSeen(step: LearnStep): Promise<void> {
-    if (!reason.trim()) return;
+  async function yes(step: LearnStep): Promise<void> {
+    if (asking?.kind !== 'confirm' || asking.path !== step.path) return;
+    if (asking.state === 'seen') {
+      asking = { ...asking, kind: 'reason', confirmed: true };
+      return;
+    }
     asking = null;
-    await app.tickStep(step, 'seen', reason);
+    await app.tickStep(step, 'learned', undefined, true);
+  }
+  async function saveSeen(step: LearnStep): Promise<void> {
+    if (!reason.trim() || asking?.kind !== 'reason') return;
+    const confirmed = asking.confirmed;
+    asking = null;
+    await app.tickStep(step, 'seen', reason, confirmed);
   }
   function openInPath(step: LearnStep): void {
     const brief = app.paths?.find((p) => p.id === step.path);
@@ -89,6 +102,7 @@
       >
     {/each}
   </fieldset>
+  <div aria-live="polite" data-testid="learn-live">
   {#if app.learnNoSeries || !series || first === null}
     <dl class="figs">
       <div data-fig="today"><dt>{t('learn.today_state')}</dt><dd class="big">{t('learn.today_learned', todayState)}</dd></div>
@@ -103,7 +117,7 @@
     {@const xpCmp = compare((f) => f.xp)}
     {@const hoursCmp = compare((f) => f.doneH, h)}
     {@const daysCmp = compare((f) => f.days)}
-    <dl class="figs" aria-live="polite">
+    <dl class="figs">
       <div data-fig="learned">
         <dt>{t('learn.fig.learned')}</dt>
         <dd class="big">{now?.learned ?? 0}</dd>
@@ -133,6 +147,7 @@
       </div>
     </dl>
   {/if}
+  </div>
 </section>
 
 <section class="tile" aria-labelledby="learn-next">
@@ -158,11 +173,11 @@
             >
             {#if step.safety}<span class="warn"><span aria-hidden="true">⚠</span> {t('learn.step.safety')}</span>{/if}
           </p>
-          {#if canTick && step.key !== null}
+          {#if canTick && step.key !== null && !app.learnTicked.has(step.path)}
             {#if asking?.path === step.path && asking.kind === 'confirm'}
               <div class="ask" role="group" aria-labelledby="confirm-{step.path}">
-                <p id="confirm-{step.path}"><span aria-hidden="true">⚠</span> {t('learn.step.confirm')}</p>
-                <button class="primary" disabled={app.busy} onclick={() => void learned(step)}>{t('learn.step.confirm_yes')}</button>
+                <p id="confirm-{step.path}"><span aria-hidden="true">⚠</span> {t(asking.state === 'seen' ? 'learn.step.confirm_seen' : 'learn.step.confirm')}</p>
+                <button class="primary" disabled={app.busy} onclick={() => void yes(step)}>{t('learn.step.confirm_yes')}</button>
                 <button onclick={() => (asking = null)}>{t('learn.step.cancel')}</button>
               </div>
             {:else if asking?.path === step.path && asking.kind === 'reason'}
@@ -181,7 +196,7 @@
             {/if}
           {/if}
           {#if app.paths?.some((p) => p.id === step.path)}
-            <button class="link" onclick={() => openInPath(step)}>{t('learn.step.open')}</button>
+            <button class="link" aria-label={t('learn.step.open_of', { label })} onclick={() => openInPath(step)}>{t('learn.step.open')}</button>
           {/if}
         </li>
       {/each}

@@ -248,7 +248,7 @@ export type Op =
   | { op: 'set'; id: string; patch: { status: Status }; if_match?: string }
   | { op: 'answer'; id: string; question: string; option: number; if_match?: string }
   | { op: 'done'; id: string; confirm: string }
-  | { op: 'node_set'; id: string; point: string; state: PointState; reason?: string; if_match?: string }
+  | { op: 'node_set'; id: string; point: string; state: PointState; reason?: string; ack?: true; if_match?: string }
   | { op: 'meeting_capture'; id: string; entry: { kind: CaptureKind; text: string; at?: string } }
   | { op: 'meeting_capture'; id: string; entry: { kind: MediaCaptureKind; asset: string; at?: string } }
   | { op: 'meeting_attend'; id: string; name: string; present: boolean };

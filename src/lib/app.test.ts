@@ -1423,6 +1423,56 @@ describe('App, the page Lernen', () => {
     expect(app.notice).toBeNull();
   });
 
+  it('ticks a point under {safety} only confirmed, and then with the engine\'s ack', async () => {
+    const fake = new FakeSource();
+    const app = new App(deps(fake, { now: realNow }));
+    await app.start(null);
+    await app.openLearn();
+    await app.tickStep(app.learnSteps![0]!, 'learned');
+    await app.tickStep(app.learnSteps![0]!, 'learned');
+    const safety = app.learnSteps![0]!;
+    expect([safety.key, safety.safety]).toEqual(['async', true]);
+    await app.tickStep(safety, 'learned');
+    expect(fake.writes).toHaveLength(2);
+    await app.tickStep(safety, 'seen', 'nur gelesen', true);
+    expect(fake.writes[2]?.op).toEqual({ op: 'node_set', id: 'garden/lernpfad-rust', point: 'async', state: 'seen', reason: 'nur gelesen', ack: true, if_match: 'e3' });
+    expect(app.learnSteps).toEqual([]);
+  });
+
+  it('a late answer of a period left since does not cover the one now chosen', async () => {
+    const fake = new FakeSource();
+    const app = new App(deps(fake, { now: realNow }));
+    await app.start(null);
+    await app.openLearn();
+    const history = fake.learnHistory.bind(fake);
+    let open: () => void = () => undefined;
+    const gate = new Promise<void>((r) => (open = r));
+    fake.learnHistory = async (since, until) => {
+      if (since.endsWith('-01-01')) await gate;
+      return history(since, until);
+    };
+    const slow = app.setLearnPeriod('year');
+    await app.setLearnPeriod('week');
+    expect(app.learnShown).not.toBeNull();
+    open();
+    await slow;
+    expect(app.learnShown).not.toBeNull();
+  });
+
+  it('offline a step ticked waits in the queue and is not ticked twice', async () => {
+    const fake = new FakeSource();
+    const app = new App(deps(fake, { now: realNow }));
+    await app.start(null);
+    await app.openLearn();
+    const step = app.learnSteps![0]!;
+    fake.offline = true;
+    await app.refresh();
+    await app.tickStep(step, 'learned');
+    await app.tickStep(step, 'learned');
+    expect(app.pending.map((p) => p.state)).toEqual(['waiting']);
+    expect(app.learnTicked.has(step.path)).toBe(true);
+  });
+
   it('offers the page only with the learning paths of the engine (a hub that does not say: offered)', async () => {
     const fake = new FakeSource();
     const app = new App(deps(fake, { now: realNow }));
