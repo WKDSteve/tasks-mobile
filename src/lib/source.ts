@@ -4,7 +4,7 @@
 
 import type { PushSubscriptionBody } from './push';
 import type { Right } from './rights';
-import type { ConfirmRequest, DonePreview, HubHello, MeetingBrief, MeetingDetail, Op, OpOutcome, PathBrief, PathDetail, TaskDetail, TestingRun, UploadKind, VaultView } from './types';
+import type { ConfirmRequest, DonePreview, HubHello, LearnSeries, LearnStep, MeetingBrief, MeetingDetail, Op, OpOutcome, PathBrief, PathDetail, TaskDetail, TestingRun, UploadKind, VaultView } from './types';
 
 /** The hub could not be reached at all (no tunnel, no network): the page is offline, the write waits. */
 export class Unreachable extends Error {
@@ -58,6 +58,10 @@ export interface DataSource {
   paths(): Promise<{ paths: PathBrief[]; partial: boolean }>;
   /** One learning path with its points. */
   path(id: string): Promise<PathDetail>;
+  /** The next point to learn of each running path of the shown areas (`HubRefused` from a hub without the way). */
+  learnNext(): Promise<{ steps: LearnStep[]; partial: boolean }>;
+  /** The series of the learning figures of the shown areas, day by day from `since` to `until` (`YYYY-MM-DD`). */
+  learnHistory(since: string, until: string): Promise<LearnSeries>;
   /** The meetings of the shown areas between two days (`YYYY-MM-DD`), in the order of their time. */
   meetings(since: string, until: string): Promise<{ meetings: MeetingBrief[]; partial: boolean }>;
   /** One meeting with its agenda, its minutes and its follow-ups. */

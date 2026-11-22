@@ -92,6 +92,23 @@ async function main(): Promise<void> {
     newId: () => crypto.randomUUID(),
     timer: { set: (run, ms) => window.setTimeout(run, ms), clear: (handle) => window.clearTimeout(handle as number) },
     visible: () => document.visibilityState === 'visible',
+    // A choice of this device only (the period of the page Lernen); a browser that keeps nothing keeps it in memory.
+    prefs: {
+      get: (key) => {
+        try {
+          return localStorage.getItem(key);
+        } catch {
+          return null;
+        }
+      },
+      set: (key, value) => {
+        try {
+          localStorage.setItem(key, value);
+        } catch {
+          // not kept: the page still works
+        }
+      },
+    },
     push: browserPush(navigator, typeof Notification === 'undefined' ? undefined : Notification),
   };
   const state = new AppState(deps);

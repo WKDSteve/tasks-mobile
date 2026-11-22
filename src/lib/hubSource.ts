@@ -2,11 +2,11 @@
 // the kit's `HubClient`; this file maps the routes and turns every failure into one of the errors of `source.ts`.
 
 import { HubClient } from 'appkit-ui/client';
-import { areaClasses, deviceLevel, donePreview, hubHello, meetingDetail, meetingList, OP_ERROR_CODES, opOutcome, pathDetail, pathList, taskDetail, testingRun, testingSheets, vaultView } from './parse';
+import { areaClasses, deviceLevel, donePreview, hubHello, learnSeries, learnSteps, meetingDetail, meetingList, OP_ERROR_CODES, opOutcome, pathDetail, pathList, taskDetail, testingRun, testingSheets, vaultView } from './parse';
 import { pushKey, type PushSubscriptionBody } from './push';
 import type { Right } from './rights';
 import { AnswerLost, HubRefused, Unpaired, Unreachable, type DataSource } from './source';
-import type { ConfirmRequest, DataClass, DonePreview, HubHello, MeetingBrief, MeetingDetail, Op, OpErrorCode, OpOutcome, PathBrief, PathDetail, TaskDetail, TestingRun, UploadKind, VaultView } from './types';
+import type { ConfirmRequest, DataClass, DonePreview, HubHello, LearnSeries, LearnStep, MeetingBrief, MeetingDetail, Op, OpErrorCode, OpOutcome, PathBrief, PathDetail, TaskDetail, TestingRun, UploadKind, VaultView } from './types';
 
 /** How long a read may take before the page calls the hub unreachable (MSEC-08). */
 export const READ_TIMEOUT_MS = 15_000;
@@ -120,6 +120,16 @@ export class HubSource implements DataSource {
   async path(id: string): Promise<PathDetail> {
     if (this.classes.size === 0) this.classes = areaClasses(await this.read('/api/tasks/areas'));
     return pathDetail(await this.read(`/api/tasks/path?id=${idParam(id)}`), this.classes);
+  }
+
+  async learnNext(): Promise<{ steps: LearnStep[]; partial: boolean }> {
+    if (this.classes.size === 0) this.classes = areaClasses(await this.read('/api/tasks/areas'));
+    return learnSteps(await this.read('/api/tasks/learn_next?n=1'), this.classes);
+  }
+
+  async learnHistory(since: string, until: string): Promise<LearnSeries> {
+    const days = (v: string) => (/^\d{4}-\d{2}-\d{2}$/.test(v) ? v : '');
+    return learnSeries(await this.read(`/api/tasks/learn_history?since=${days(since)}&until=${days(until)}&step=day`));
   }
 
   async write(clientOpId: string, op: Op): Promise<OpOutcome> {

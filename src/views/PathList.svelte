@@ -11,6 +11,8 @@
     p.progress.learned + p.progress.seen + p.progress.dropped;
 </script>
 
+<p><button onclick={() => void app.openLearn()}>← {t('learn.title')}</button></p>
+
 <h2>{t('paths.title')}</h2>
 {#if app.connection !== 'live'}
   <p class="muted" data-testid="paths-offline">{t('paths.offline')}</p>

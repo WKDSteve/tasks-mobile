@@ -8,15 +8,16 @@ import { PUSH_KINDS, type PushAccess, type PushState } from './push';
 import { filesOf, WriteQueue, type Pending, type QueueStore } from './queue';
 import { allows, DEFAULT_RIGHTS, rightsOf, type Right } from './rights';
 import { AnswerLost, HubRefused, Unpaired, Unreachable, type DataSource } from './source';
+import { parsePeriod, periodFrame, type LearnPeriod, type PeriodFrame } from './learn';
 import type { KeptView } from './storage';
 import { isFresh } from './storage';
 import { localDay } from './today';
 import type { CacheStore } from 'appkit-ui/cache';
-import type { CaptureKind, ConfirmRequest, DonePreview, MeetingBrief, MeetingDetail, Op, PathBrief, PathDetail, PathPoint, PointState, Status, TaskBrief, TaskDetail, TestingRun, VaultView } from './types';
+import type { CaptureKind, ConfirmRequest, DonePreview, LearnSeries, LearnStep, MeetingBrief, MeetingDetail, Op, PathBrief, PathDetail, PathPoint, PointState, Status, TaskBrief, TaskDetail, TestingRun, VaultView } from './types';
 import type { TextKey } from './i18n';
 import type { Shared } from './share';
 
-export type Screen = 'pair' | 'today' | 'list' | 'capture' | 'queue' | 'task' | 'paths' | 'path' | 'meetings' | 'meeting';
+export type Screen = 'pair' | 'today' | 'list' | 'capture' | 'queue' | 'task' | 'learn' | 'paths' | 'path' | 'meetings' | 'meeting';
 export type Connection = 'checking' | 'live' | 'offline';
 
 export interface AppDeps {
@@ -40,6 +41,8 @@ export interface AppDeps {
   timer?: RetryTimer;
   /** Whether the page is shown; a page in the background asks nothing. */
   visible?(): boolean;
+  /** Choices of this device (the period of the page Lernen); none: kept in memory only. */
+  prefs?: { get(key: string): string | null; set(key: string, value: string): void };
   /** Notices from the hub (Web Push); without it the page offers none. */
   push?: PushAccess;
 }
@@ -397,6 +400,7 @@ export class App {
     try {
       const hello = await source.hello();
       this.engineProblem = hello.engineReady ? null : (hello.engineProblem ?? '?');
+      this.capabilities = hello.capabilities;
       await this.readLevel(source);
       const report = await this.queue.flush(source);
       if (report.stopped === 'unpaired') {
@@ -602,6 +606,128 @@ export class App {
       if (!item) return false;
       await this.readMeeting();
       return true;
+    } finally {
+      this.busy = false;
+    }
+  }
+
+  /** What the engine behind the hub can, as `hello` said it; null: not said (an older hub). */
+  capabilities = $state<string[] | null>(null);
+
+  /** Whether the hub has the learning paths: the page Lernen is offered only then (a hub that does not say: offered). */
+  get hasPaths(): boolean {
+    return this.capabilities === null || this.capabilities.includes('paths');
+  }
+
+  /** The period of the tile My learning, kept on this device. */
+  learnPeriod = $state<LearnPeriod>('week');
+  private learnPeriodRead = false;
+  /** The next steps of the running paths, as last read; null: not read, or the hub has none (`learnNoSteps`). */
+  learnSteps = $state<LearnStep[] | null>(null);
+  /** The series of the shown areas over the period and the one before, and the window it answers. */
+  learnSeries = $state<{ key: string; series: LearnSeries } | null>(null);
+  /** The hub does not give this phone the next steps or the series (an older hub, or one that keeps them on the PC). */
+  learnNoSteps = $state(false);
+  learnNoSeries = $state(false);
+  learnPartial = $state(false);
+
+  /** The day of this device, the frame of the period, and its window as a key. */
+  get learnToday(): string {
+    return localDay(this.deps.now());
+  }
+  get learnFrame(): PeriodFrame {
+    return periodFrame(this.learnPeriod, this.learnToday);
+  }
+
+  /** The series that answers the period shown, or null while another is read. */
+  get learnShown(): LearnSeries | null {
+    const frame = this.learnFrame;
+    return this.learnSeries?.key === `${frame.ask.since}..${frame.ask.until}` ? this.learnSeries.series : null;
+  }
+
+  /** The page Lernen: the tile and the next steps, read now (only with the hub there; not kept on the phone). */
+  async openLearn(): Promise<void> {
+    this.screen = 'learn';
+    if (!this.learnPeriodRead) {
+      this.learnPeriodRead = true;
+      this.learnPeriod = parsePeriod(this.deps.prefs?.get('tasks-mobile.learn-period') ?? null);
+    }
+    await this.readLearn();
+  }
+
+  /** Another period: kept on this device, its series read. */
+  async setLearnPeriod(period: LearnPeriod): Promise<void> {
+    this.learnPeriod = period;
+    this.deps.prefs?.set('tasks-mobile.learn-period', period);
+    await this.readSeries();
+  }
+
+  private async readLearn(): Promise<void> {
+    const source = this.source;
+    if (!source || this.connection !== 'live') return;
+    try {
+      const read = await source.paths();
+      this.paths = read.paths;
+      this.pathsPartial = read.partial;
+    } catch (error) {
+      this.failed(error);
+      return;
+    }
+    await Promise.all([this.readSteps(), this.readSeries()]);
+  }
+
+  private async readSteps(): Promise<void> {
+    const source = this.source;
+    if (!source || this.connection !== 'live') return;
+    try {
+      const read = await source.learnNext();
+      this.learnSteps = read.steps;
+      this.learnPartial = read.partial;
+      this.learnNoSteps = false;
+    } catch (error) {
+      // A hub that keeps them on the PC: the page says so and shows the rest.
+      if (error instanceof HubRefused) this.learnNoSteps = true;
+      else this.failed(error);
+    }
+  }
+
+  private async readSeries(): Promise<void> {
+    const source = this.source;
+    if (!source || this.connection !== 'live') return;
+    const { since, until } = this.learnFrame.ask;
+    const key = `${since}..${until}`;
+    try {
+      const series = await source.learnHistory(since, until);
+      this.learnSeries = { key, series };
+      this.learnNoSeries = false;
+    } catch (error) {
+      if (error instanceof HubRefused) this.learnNoSeries = true;
+      else this.failed(error);
+    }
+  }
+
+  /**
+   * Tick the next point of a path from the page Lernen (`node_set` on the version of the path last read, MOB-08):
+   * learned at once, seen with a reason. Through the queue like every write; the steps and the tile are read again
+   * once the hub answered (MOB-07).
+   */
+  async tickStep(step: LearnStep, state: 'learned' | 'seen', reason?: string): Promise<void> {
+    if (step.key === null) return;
+    const etag = this.paths?.find((p) => p.id === step.path)?.etag ?? null;
+    const why = reason?.trim();
+    const op: Op = {
+      op: 'node_set',
+      id: step.path,
+      point: step.key,
+      state,
+      ...(why ? { reason: why.slice(0, 500) } : {}),
+      ...(etag ? { if_match: etag } : {}),
+    };
+    this.busy = true;
+    try {
+      const item = await this.enqueue(op, step.area, `${step.title}: ${step.label}`.slice(0, 200));
+      await this.readLearn();
+      this.sayConflict(item);
     } finally {
       this.busy = false;
     }

@@ -27,6 +27,9 @@ import type {
   RunBlock,
   RunVerdict,
   VaultView,
+  LearnDay,
+  LearnSeries,
+  LearnStep,
 } from './types';
 import { STATUSES } from './types';
 import { LEVELS, type Right } from './rights';
@@ -644,9 +647,88 @@ export function testingRun(doc: unknown): TestingRun {
 /** `hello` of the hub. */
 export function hubHello(doc: unknown): HubHello {
   if (!isObj(doc) || !isObj(doc['engine'])) throw new ShapeError('hello');
+  const caps = doc['engine']['capabilities'];
   return {
     version: str(doc['version'], 100) ?? '',
     engineReady: doc['engine']['ready'] === true,
     engineProblem: str(doc['engine']['problem']),
+    capabilities: Array.isArray(caps)
+      ? caps.filter((c): c is string => typeof c === 'string' && /^[a-z_]{1,64}$/.test(c)).slice(0, 200)
+      : null,
   };
+}
+
+/** A number the engine wrote (a count or hours, may be below 0 as a difference); anything else is 0. */
+function figure(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value) && Math.abs(value) <= 1e9 ? value : 0;
+}
+
+/** A number of hours or XP, or null. */
+function amount(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 1e6 ? value : null;
+}
+
+export const MAX_STEPS = 50;
+export const MAX_DAYS = 800;
+
+/** The first point of a path of `tasks.learn_next`; null when it is no path of a shown area (the hub cut already). */
+function learnStep(value: unknown, classes: Map<string, DataClass>): LearnStep | null {
+  if (!isObj(value)) return null;
+  const path = value['path'];
+  const area = value['area'];
+  const title = str(value['title']);
+  if (!isTaskId(path) || !isAreaName(area) || path.split('/')[0] !== area || title === null) return null;
+  if (!shownClass(classes.get(area) ?? 'unclassified')) return null;
+  const point = Array.isArray(value['points']) && isObj(value['points'][0]) ? value['points'][0] : null;
+  if (point === null) return null;
+  const key = str(point['key'], 64);
+  const icon = isObj(value['icon']) && value['icon']['kind'] === 'emoji' ? str(value['icon']['value'], 16) : null;
+  return {
+    path,
+    area,
+    title,
+    icon,
+    key: key !== null && key !== '' ? key : null,
+    label: str(point['label'], 1000) ?? '',
+    stage: str(point['stage_label'], 1000) ?? '',
+    hMin: amount(point['h_min']),
+    hMax: amount(point['h_max']),
+    xp: amount(point['xp']),
+    safety: point['safety'] === true,
+    link: webLink(point['link']),
+  };
+}
+
+/** `tasks.learn_next` as the hub cut it for this phone: the next point of each running path. */
+export function learnSteps(doc: unknown, classes: Map<string, DataClass>): { steps: LearnStep[]; partial: boolean } {
+  if (!isObj(doc) || doc['kind'] !== 'tasks.learn_next' || !Array.isArray(doc['items'])) throw new ShapeError('learn_next');
+  const steps = doc['items']
+    .slice(0, MAX_STEPS)
+    .map((item) => learnStep(item, classes))
+    .filter((s): s is LearnStep => s !== null);
+  return { steps, partial: doc['partial'] === true };
+}
+
+/** `tasks.learn_history` asked by day, as the hub cut it for this phone (over its released areas). */
+export function learnSeries(doc: unknown): LearnSeries {
+  if (!isObj(doc) || doc['kind'] !== 'tasks.learn_history' || !Array.isArray(doc['points'])) throw new ShapeError('learn_history');
+  const streak = isObj(doc['streak']) ? { current: count(doc['streak']['current']), longest: count(doc['streak']['longest']) } : null;
+  const days = doc['points']
+    .slice(0, MAX_DAYS)
+    .flatMap((p): LearnDay[] => {
+      if (!isObj(p)) return [];
+      const date = day(p['date']);
+      if (date === null) return [];
+      return [
+        {
+          date,
+          learned: figure(p['learned']),
+          seen: figure(p['seen']),
+          xp: figure(p['xp']),
+          doneH: figure(p['done_h']),
+          learning: figure(p['days']) > 0,
+        },
+      ];
+    });
+  return { first: day(doc['first']), streak, days, partial: doc['partial'] === true };
 }

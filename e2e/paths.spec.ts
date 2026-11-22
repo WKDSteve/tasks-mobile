@@ -7,6 +7,7 @@ import { expect, open, test } from './fixtures';
 test('lists the learning paths, opens one and ticks its points', async ({ page }) => {
   await open(page);
   await page.getByRole('button', { name: 'Learn' }).click();
+  await page.getByTestId('learn-all-paths').click();
   const list = page.getByTestId('paths');
   await expect(list.getByRole('button')).toHaveCount(1);
   await expect(list).toContainText('Rust lernen');

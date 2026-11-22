@@ -22,6 +22,8 @@ Done in tasks-desktop (its `mobile.lock`, `tools/build-mobile.py`, `crates/tasks
   `/api/tasks/task`, `/api/tasks/done_preview`, `/api/tasks/device` (the level of this device now; a hub without it
   leaves the page at read, create and change), `/api/tasks/testing_sheets`, `/api/tasks/testing_run`,
   `/api/tasks/paths`, `/api/tasks/path` (the learning paths, cut by the hub; a point is ticked with `node_set`),
+  `/api/tasks/learn_next`, `/api/tasks/learn_history` (the page Lernen: the next steps and the series by day, asked of
+  the engine for the released areas alone and cut by the hub),
   `/api/tasks/meetings`, `/api/tasks/meeting` (the meetings, cut by the class of their area; a line of the minutes is
   written with `meeting_capture`, a participant ticked by name with `meeting_attend` where the hub gave the
   participants);

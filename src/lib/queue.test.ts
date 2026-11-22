@@ -23,7 +23,7 @@ function source(answers: ((op: QueueOp) => OpOutcome | Error)[]): DataSource & {
   return {
     kind: 'fake',
     calls,
-    hello: async () => ({ version: '', engineReady: true, engineProblem: null }),
+    hello: async () => ({ version: '', engineReady: true, engineProblem: null, capabilities: null }),
     level: async () => 'change' as const,
     testingSheets: async () => [],
     testingRun: async () => ({ available: false, run: null }),
@@ -44,6 +44,12 @@ function source(answers: ((op: QueueOp) => OpOutcome | Error)[]): DataSource & {
       throw new Error('unused');
     },
     path: async () => {
+      throw new Error('unused');
+    },
+    learnNext: async () => {
+      throw new Error('unused');
+    },
+    learnHistory: async () => {
       throw new Error('unused');
     },
     donePreview: async () => {

@@ -147,6 +147,47 @@ export interface PathDetail {
   points: PathPoint[];
 }
 
+/** The next point to learn of a running path (the hub's cut, `tasks.learn_next`; the engine chose it). */
+export interface LearnStep {
+  path: string;
+  area: string;
+  /** The title of the path; label and stage are untrusted text too. */
+  title: string;
+  icon: string | null;
+  /** The point to tick (`node_set`); null: the engine named none, the step can only be opened in its path. */
+  key: string | null;
+  label: string;
+  stage: string;
+  /** Planned hours, a span or one number. */
+  hMin: number | null;
+  hMax: number | null;
+  xp: number | null;
+  /** Under `{safety}`: closing it is confirmed first. */
+  safety: boolean;
+  /** A web address only. */
+  link: string | null;
+}
+
+/** A day of the series of the learning figures: what changed that day (the engine's differences, may be below 0). */
+export interface LearnDay {
+  date: string;
+  learned: number;
+  seen: number;
+  xp: number;
+  doneH: number;
+  /** A learning day: a point was learned or seen (the engine's word, `days`). */
+  learning: boolean;
+}
+
+/** `tasks.learn_history` asked by day, as the hub cut it: its first day, the streak, the days. */
+export interface LearnSeries {
+  /** The first day of the series; null: no day written yet. */
+  first: string | null;
+  streak: { current: number; longest: number } | null;
+  days: LearnDay[];
+  partial: boolean;
+}
+
 /** A meeting as the phone shows it (the hub's cut, `tasks.meetings`): time, place, and how to join. */
 export interface MeetingBrief {
   id: string;
@@ -260,6 +301,8 @@ export interface HubHello {
   version: string;
   engineReady: boolean;
   engineProblem: string | null;
+  /** What the engine can (`paths`, `learn_next`, `learn_history`, ...); null: the hub did not say. */
+  capabilities: string[] | null;
 }
 
 /** How a run of the test sheets ended, as the testing hub says it. */

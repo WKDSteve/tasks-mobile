@@ -34,9 +34,14 @@ What is there:
   the participants out (a public area, or an internal one it allows), they are ticked present by name. A notice before
   a meeting begins or after it ended opens it. Read only while the PC can be reached; what is written waits in the
   queue like any change.
-- **Learn**: the learning paths of the released areas with their progress; one path as a tree of its points, each
-  opened as a link (web addresses only) and ticked as learned, or as looked at or not needed with a reason. Read only
-  while the PC can be reached; a tick waits in the queue like any change.
+- **Learn**: first the tile **My learning** with a period (Today, Week, Month, Quarter, Year; kept on this phone) and
+  its figures from the series of the learning figures (points learned, XP, learning time, learning days, the streak),
+  each against as many days of the period before in words with ▲/▼, and the next step of each running path, ticked on
+  the way: learned at once, seen with a reason, a point under `{safety}` after a yes. **All learning paths** lists the
+  paths of the released areas with their progress; one path as a tree of its points, each opened as a link (web
+  addresses only) and ticked as learned, or as looked at or not needed with a reason. Shown only when the engine has
+  the learning paths; read only while the PC can be reached; a tick waits in the queue like any change. A hub without
+  the next steps or the series says so and shows today's state.
 - **Offline**: the last list stays readable; what you create or change offline waits in a queue and is sent when the
   hub is reached again. Nothing is shown as done before the engine said so; a change the file moved on from is a
   conflict you see, never an overwrite. The queue is the one of appkit (`appkit-ui/queue`); only the files of a new

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { areaClasses, dataClassOf, deviceLevel, testingSheets, donePreview, ExportClassError, isTaskId, MAX_NEXT, nextPicks, opOutcome, meetingDetail, meetingList, minuteShown, minutesOf, pathDetail, pathList, phoneExport, ShapeError, statusCounts, taskBrief, taskDetail, testingRun, vaultView } from './parse';
+import { areaClasses, dataClassOf, deviceLevel, testingSheets, donePreview, ExportClassError, hubHello, isTaskId, learnSeries, learnSteps, MAX_NEXT, nextPicks, opOutcome, meetingDetail, meetingList, minuteShown, minutesOf, pathDetail, pathList, phoneExport, ShapeError, statusCounts, taskBrief, taskDetail, testingRun, vaultView } from './parse';
 
 const classes = new Map([
   ['garden', 'public' as const],
@@ -426,5 +426,75 @@ describe('meetings (the hub cut them; the page checks again)', () => {
     expect(d.agenda).toEqual([{ n: 1, text: 'Stand', ticked: true }]);
     expect(d.followups[0]?.task).toBe('garden/t');
     expect(() => meetingDetail({ ...doc, meeting: entry('secret/x', 'secret') }, classes)).toThrow(ShapeError);
+  });
+});
+
+describe('the page Lernen: the next steps and the series', () => {
+  const classes = new Map([
+    ['garden', 'public' as const],
+    ['kitchen', 'internal' as const],
+    ['vault-secret', 'private' as const],
+  ]);
+
+  it('takes the first point of each path of a shown area, a link only as a web address', () => {
+    const { steps, partial } = learnSteps(
+      {
+        kind: 'tasks.learn_next',
+        items: [
+          {
+            path: 'garden/rust',
+            area: 'garden',
+            title: 'Rust',
+            icon: { kind: 'file', file: 'x.svg' },
+            points: [
+              { index: 2, key: 'book', label: 'Book', stage_label: 'Stage 1', h_min: 1, h_max: 2, xp: 10, safety: true, link: 'file:///E:/x.pdf' },
+              { index: 3, key: 'later', label: 'Later' },
+            ],
+          },
+          { path: 'vault-secret/p', area: 'vault-secret', title: 'SECRET', points: [{ index: 1, key: 'a', label: 'A' }] },
+          { path: 'kitchen/x', area: 'garden', title: 'Mismatch', points: [{ index: 1, key: 'a', label: 'A' }] },
+          { path: 'kitchen/none', area: 'kitchen', title: 'No point', points: [] },
+          { path: 'kitchen/nokey', area: 'kitchen', title: 'No key', points: [{ index: 1, label: 'B', link: 'https://x.org' }] },
+        ],
+        partial: true,
+      },
+      classes,
+    );
+    expect(partial).toBe(true);
+    expect(steps).toEqual([
+      { path: 'garden/rust', area: 'garden', title: 'Rust', icon: null, key: 'book', label: 'Book', stage: 'Stage 1', hMin: 1, hMax: 2, xp: 10, safety: true, link: null },
+      { path: 'kitchen/nokey', area: 'kitchen', title: 'No key', icon: null, key: null, label: 'B', stage: '', hMin: null, hMax: null, xp: null, safety: false, link: 'https://x.org' },
+    ]);
+    expect(() => learnSteps({ kind: 'tasks.paths', items: [] }, classes)).toThrow(ShapeError);
+  });
+
+  it('reads the series by day: differences may be below 0, a day that is no day is left out', () => {
+    const s = learnSeries({
+      kind: 'tasks.learn_history',
+      first: '2026-11-09',
+      streak: { current: 2, longest: -1 },
+      points: [
+        { date: '2026-11-10', learned: 2, seen: 1, xp: 25, done_h: 1.5, days: 1 },
+        { date: '2026-11-11', learned: -1, seen: 0, xp: 'x', done_h: Infinity, days: 0 },
+        { date: 'gestern', learned: 9 },
+      ],
+      partial: false,
+    });
+    expect(s).toEqual({
+      first: '2026-11-09',
+      streak: { current: 2, longest: 0 },
+      days: [
+        { date: '2026-11-10', learned: 2, seen: 1, xp: 25, doneH: 1.5, learning: true },
+        { date: '2026-11-11', learned: -1, seen: 0, xp: 0, doneH: 0, learning: false },
+      ],
+      partial: false,
+    });
+    expect(learnSeries({ kind: 'tasks.learn_history', points: [] })).toEqual({ first: null, streak: null, days: [], partial: false });
+    expect(() => learnSeries({ kind: 'tasks.learn_next', points: [] })).toThrow(ShapeError);
+  });
+
+  it('reads what the engine can from hello; a hub that does not say is null', () => {
+    expect(hubHello({ version: '1', engine: { ready: true, capabilities: ['paths', 'learn_next', 'Bad Word', 7] } }).capabilities).toEqual(['paths', 'learn_next']);
+    expect(hubHello({ version: '1', engine: { ready: true } }).capabilities).toBeNull();
   });
 });

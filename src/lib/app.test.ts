@@ -68,6 +68,8 @@ function sourceFor(fake: FakeSource, dead: Set<string | null>): (token: string |
       meetings: (since, until) => gate(() => fake.meetings(since, until)),
       meeting: (id) => gate(() => fake.meeting(id)),
       path: (id) => gate(() => fake.path(id)),
+      learnNext: () => gate(() => fake.learnNext()),
+      learnHistory: (since, until) => gate(() => fake.learnHistory(since, until)),
       write: (id, op) => gate(() => fake.write(id, op)),
       donePreview: (id) => gate(() => fake.donePreview(id)),
       upload: (id, file, name, kind) => gate(() => fake.upload(id, file, name, kind)),
@@ -1366,5 +1368,67 @@ describe('the test sheets of a task, run on the PC', () => {
     expect(app.sheets).toBeNull();
     expect(app.testing).toBeNull();
     expect(app.confirmable).toBe(false);
+  });
+});
+
+describe('App, the page Lernen', () => {
+  const realNow = () => new Date();
+  const prefs = () => {
+    const kept = new Map<string, string>();
+    return { kept, get: (k: string) => kept.get(k) ?? null, set: (k: string, v: string) => void kept.set(k, v) };
+  };
+
+  it('reads the paths, the next steps and the series of the period; the period is kept on the device', async () => {
+    const fake = new FakeSource();
+    const p = prefs();
+    p.kept.set('tasks-mobile.learn-period', 'month');
+    const app = new App(deps(fake, { now: realNow, prefs: p }));
+    await app.start(null);
+    expect(app.hasPaths).toBe(true);
+    await app.openLearn();
+    expect(app.screen).toBe('learn');
+    expect(app.learnPeriod).toBe('month');
+    expect(app.learnSteps?.map((s) => [s.path, s.key])).toEqual([['garden/lernpfad-rust', 'book']]);
+    expect(JSON.stringify(app.learnSteps)).not.toContain('SECRET-MARKER');
+    expect(app.learnShown?.first).not.toBeNull();
+    await app.setLearnPeriod('year');
+    expect(p.kept.get('tasks-mobile.learn-period')).toBe('year');
+    expect(app.learnShown?.days.length).toBeGreaterThan(0);
+  });
+
+  it('ticks the next step with the version of its path; the step after it is next and today counts it', async () => {
+    const fake = new FakeSource();
+    const app = new App(deps(fake, { now: realNow }));
+    await app.start(null);
+    await app.setLearnPeriod('day');
+    await app.openLearn();
+    const step = app.learnSteps![0]!;
+    await app.tickStep(step, 'learned');
+    expect(fake.writes[0]?.op).toEqual({ op: 'node_set', id: 'garden/lernpfad-rust', point: 'book', state: 'learned', if_match: 'e1' });
+    expect(app.learnSteps?.[0]?.key).toBe('rustlings');
+    expect(app.learnShown?.days.at(-1)?.learned).toBe(1);
+    await app.tickStep(app.learnSteps![0]!, 'seen', '  kenne ich  ');
+    expect(fake.writes[1]?.op).toEqual({ op: 'node_set', id: 'garden/lernpfad-rust', point: 'rustlings', state: 'seen', reason: 'kenne ich', if_match: 'e2' });
+  });
+
+  it('without the reads of the hub: the paths and a word, no error', async () => {
+    const fake = new FakeSource();
+    fake.learnRoutes = false;
+    const app = new App(deps(fake, { now: realNow }));
+    await app.start(null);
+    await app.openLearn();
+    expect(app.learnNoSteps).toBe(true);
+    expect(app.learnNoSeries).toBe(true);
+    expect(app.paths?.length).toBe(1);
+    expect(app.notice).toBeNull();
+  });
+
+  it('offers the page only with the learning paths of the engine (a hub that does not say: offered)', async () => {
+    const fake = new FakeSource();
+    const app = new App(deps(fake, { now: realNow }));
+    expect(app.hasPaths).toBe(true);
+    await app.start(null);
+    app.capabilities = ['reorder'];
+    expect(app.hasPaths).toBe(false);
   });
 });

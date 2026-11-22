@@ -6,11 +6,11 @@
 //
 // The names are neutral (APP-01): nothing here is a real area or a real task.
 
-import { areaClasses, deviceLevel, donePreview, hubHello, meetingDetail, meetingList, testingRun, testingSheets, opOutcome, pathDetail, pathList, taskDetail, vaultView } from './parse';
+import { areaClasses, deviceLevel, donePreview, hubHello, learnSeries, learnSteps, meetingDetail, meetingList, testingRun, testingSheets, opOutcome, pathDetail, pathList, taskDetail, vaultView } from './parse';
 import { AnswerLost, HubRefused, Unreachable, type DataSource } from './source';
 import type { PushSubscriptionBody } from './push';
 import type { Right } from './rights';
-import type { ConfirmRequest, DataClass, DonePreview, HubHello, MeetingBrief, MeetingDetail, Op, OpOutcome, PathBrief, PathDetail, TaskDetail, TestingRun, UploadKind, VaultView } from './types';
+import type { ConfirmRequest, DataClass, DonePreview, HubHello, LearnSeries, LearnStep, MeetingBrief, MeetingDetail, Op, OpOutcome, PathBrief, PathDetail, TaskDetail, TestingRun, UploadKind, VaultView } from './types';
 
 interface FakeTask {
   id: string;
@@ -218,6 +218,22 @@ function initialPaths(): FakePath[] {
 
 const CLOSED = new Set(['learned', 'seen', 'dropped']);
 
+/** A day `n` days from today, as the fake vault's series keeps it. */
+function nextDay(day: string): string {
+  const d = new Date(`${day}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + 1);
+  return d.toISOString().slice(0, 10);
+}
+
+/** What the fake vault learned on the days before today: two points eight days ago, one three and two days ago. */
+function initialLearnLog(): Map<string, { learned: number; seen: number; xp: number; doneH: number }> {
+  return new Map([
+    [dayFrom(-8), { learned: 2, seen: 0, xp: 20, doneH: 1 }],
+    [dayFrom(-3), { learned: 1, seen: 1, xp: 15, doneH: 0.5 }],
+    [dayFrom(-2), { learned: 1, seen: 0, xp: 10, doneH: 0.5 }],
+  ]);
+}
+
 /** A meeting of the fake vault, `inDays` from today; its minutes are lines `HH:MM text`. */
 interface FakeMeeting {
   id: string;
@@ -308,6 +324,13 @@ export class FakeSource implements DataSource, FakeControls {
   pushed: PushSubscriptionBody | null = null;
   private tasks = initialTasks();
   private learning = initialPaths();
+  /**
+   * The series of the learning figures of the fake vault, by day (what changed that day): a few days of learning before
+   * today, and every point ticked here counted today, as the engine's series would after its next record.
+   */
+  private learnLog = initialLearnLog();
+  /** Whether this fake hub has the reads of the page Lernen (a test takes them away to see the page without them). */
+  learnRoutes = true;
   private gatherings = initialMeetings();
   private rev = 1;
   private seen = new Map<string, OpOutcome>();
@@ -371,7 +394,12 @@ export class FakeSource implements DataSource, FakeControls {
 
   async hello(): Promise<HubHello> {
     this.reachable();
-    return hubHello({ ...HEAD, kind: 'tasks.hello', version: 'fake', engine: { ready: true, problem: null } });
+    return hubHello({
+      ...HEAD,
+      kind: 'tasks.hello',
+      version: 'fake',
+      engine: { ready: true, problem: null, capabilities: ['paths', 'path', ...(this.learnRoutes ? ['learn_next', 'learn_history'] : [])] },
+    });
   }
 
   async level(): Promise<Right> {
@@ -586,6 +614,60 @@ export class FakeSource implements DataSource, FakeControls {
     );
   }
 
+  async learnNext(): Promise<{ steps: LearnStep[]; partial: boolean }> {
+    this.reachable();
+    if (!this.learnRoutes) throw new HubRefused(403, 'not_for_devices', 'this route is not released for devices');
+    const items = this.learning.flatMap((p) => {
+      const leaves = p.points.filter((_, i) => !p.points.some((x) => x.parent === i + 1));
+      const next = leaves.find((x) => !CLOSED.has(x.state));
+      if (!next) return [];
+      const stage = next.parent !== undefined ? p.points[next.parent - 1]!.label : '';
+      return [
+        {
+          path: p.id,
+          area: p.area,
+          title: p.title,
+          stage: 'doing',
+          icon: { kind: 'emoji', value: '🦀' },
+          points: [{ index: p.points.indexOf(next) + 1, key: next.key, label: next.label, stage_index: 0, stage_label: stage, xp: 10, ...(next.link ? { link: next.link } : {}) }],
+        },
+      ];
+    });
+    const doc = {
+      ...HEAD,
+      kind: 'tasks.learn_next',
+      items: [...items, { path: 'vault-secret/lernpfad', area: 'vault-secret', title: 'SECRET-MARKER', points: [{ index: 1, key: 'x', label: 'SECRET-MARKER' }] }],
+      partial: false,
+    };
+    return learnSteps(doc, this.classes());
+  }
+
+  async learnHistory(since: string, until: string): Promise<LearnSeries> {
+    this.reachable();
+    if (!this.learnRoutes) throw new HubRefused(403, 'not_for_devices', 'this route is not released for devices');
+    const first = dayFrom(-20);
+    const points: Record<string, unknown>[] = [];
+    for (let d = since < first ? first : since; d <= until; d = nextDay(d)) {
+      const f = this.learnLog.get(d) ?? { learned: 0, seen: 0, xp: 0, doneH: 0 };
+      points.push({ date: d, learned: f.learned, seen: f.seen, dropped: 0, xp: f.xp, done_h: f.doneH, days: f.learned + f.seen > 0 ? 1 : 0, paths: [] });
+    }
+    // The streak as the engine counts it: learning days in a row up to today, or up to yesterday while today has none.
+    const learns = (d: string) => {
+      const f = this.learnLog.get(d);
+      return f !== undefined && f.learned + f.seen > 0;
+    };
+    const back = learns(dayFrom(0)) ? 0 : 1;
+    let current = 0;
+    while (current < 400 && learns(dayFrom(-back - current))) current += 1;
+    let longest = 0;
+    for (let run = 0, n = -60; n <= 0; n += 1) {
+      run = learns(dayFrom(n)) ? run + 1 : 0;
+      longest = Math.max(longest, run);
+    }
+    const doc = { ...HEAD, kind: 'tasks.learn_history', since, until, step: 'day', first, streak: { current, longest }, points, paths: [], partial: false };
+    return learnSeries(doc);
+  }
+
   async path(id: string): Promise<PathDetail> {
     this.reachable();
     const p = this.learning.find((x) => x.id === id);
@@ -612,6 +694,24 @@ export class FakeSource implements DataSource, FakeControls {
       };
     });
     return pathDetail({ ...HEAD, kind: 'tasks.path', path: this.pathEntry(p), body: 'Vom Einstieg bis Async.', nodes }, this.classes());
+  }
+
+  /** A tick of today in the series: learned and seen count up, opening one again counts it down (a difference). */
+  private countToday(was: string, now: string): void {
+    const today = dayFrom(0);
+    const f = this.learnLog.get(today) ?? { learned: 0, seen: 0, xp: 0, doneH: 0 };
+    const step = (state: string, by: number) => {
+      if (state === 'learned') {
+        f.learned += by;
+        f.xp += 10 * by;
+      } else if (state === 'seen') {
+        f.seen += by;
+        f.xp += 5 * by;
+      }
+    };
+    step(was, -1);
+    step(now, 1);
+    this.learnLog.set(today, f);
   }
 
   private result(ok: boolean, id: string | null, error?: { code: string; message: string }, started: unknown[] = []): unknown {
@@ -669,7 +769,9 @@ export class FakeSource implements DataSource, FakeControls {
         return this.result(false, p.id, { code: 'conflict', message: 'the file changed since it was read' });
       if ((op.state === 'seen' || op.state === 'dropped') && !op.reason)
         return this.result(false, p.id, { code: 'invalid_argument', message: 'node_set: seen and dropped need a reason' });
+      const was = pt.state;
       pt.state = op.state;
+      this.countToday(was, op.state);
       if (op.reason) pt.reason = op.reason;
       else delete pt.reason;
       p.etag += 1;

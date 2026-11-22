@@ -9,6 +9,7 @@
   import Capture from './views/Capture.svelte';
   import Queue from './views/Queue.svelte';
   import TaskView from './views/TaskView.svelte';
+  import Learn from './views/Learn.svelte';
   import PathList from './views/PathList.svelte';
   import PathView from './views/PathView.svelte';
   import MeetingList from './views/MeetingList.svelte';
@@ -65,6 +66,8 @@
     <TaskView {app} {t} />
   {:else if app.screen === 'today'}
     <Today {app} {t} />
+  {:else if app.screen === 'learn'}
+    <Learn {app} {t} />
   {:else if app.screen === 'paths'}
     <PathList {app} {t} />
   {:else if app.screen === 'path'}
@@ -82,7 +85,11 @@
   <nav class="bottom" aria-label={t('app.title')}>
     <button aria-current={app.screen === 'today' ? 'page' : undefined} onclick={() => (app.screen = 'today')}>{t('nav.today')}</button>
     <button aria-current={app.screen === 'list' ? 'page' : undefined} onclick={() => (app.screen = 'list')}>{t('nav.list')}</button>
-    <button aria-current={app.screen === 'paths' || app.screen === 'path' ? 'page' : undefined} onclick={() => void app.openPaths()}>{t('nav.paths')}</button>
+    {#if app.hasPaths}
+      <button aria-current={app.screen === 'learn' || app.screen === 'paths' || app.screen === 'path' ? 'page' : undefined} onclick={() => void app.openLearn()}
+        >{t('nav.paths')}</button
+      >
+    {/if}
     <button aria-current={app.screen === 'capture' ? 'page' : undefined} onclick={() => (app.screen = 'capture')}>{t('nav.capture')}</button>
     <button aria-current={app.screen === 'queue' ? 'page' : undefined} onclick={() => (app.screen = 'queue')}>
       {t('nav.queue')}{#if waiting > 0}<span class="badge" data-testid="queue-count">{waiting}</span>{/if}
