@@ -171,3 +171,50 @@ test('a photo of 4000 x 3000 px is scaled down and sent as WebP', async ({ page 
   expect(sent[0]).toMatchObject({ type: 'image/webp' });
   expect(sent[0]!.name).toMatch(/\.webp$/);
 });
+
+// Every control the phone shows, on every screen, is a target of at least 44 px (a link inside a sentence is the one
+// exception, it may stay as small as its text); a checkbox is one target with its label.
+test('every control of every screen is at least 44 px, a checkbox with its label', async ({ page }) => {
+  const measure = () =>
+    page.evaluate(() => {
+      const seen = (el: Element) => (el as HTMLElement).offsetParent !== null;
+      const small: string[] = [];
+      const controls = [...document.querySelectorAll('button, select, textarea, summary, a[href], input:not([type=hidden]):not([type=file])')].filter(seen);
+      for (const el of controls) {
+        if (el instanceof HTMLInputElement && (el.type === 'checkbox' || el.type === 'radio')) {
+          const area = (el.closest('label') ?? el).getBoundingClientRect();
+          if (area.height < 43.5 || area.width < 43.5) small.push(`${el.outerHTML.slice(0, 70)} (label ${Math.round(area.width)}x${Math.round(area.height)})`);
+          continue;
+        }
+        if (el instanceof HTMLAnchorElement) {
+          const text = el.parentElement?.textContent?.trim() ?? '';
+          if (text.length > (el.textContent?.trim().length ?? 0)) continue; // inside a sentence
+        }
+        const r = el.getBoundingClientRect();
+        if (r.height < 43.5 || r.width < 43.5) small.push(`${el.outerHTML.slice(0, 70)} (${Math.round(r.width)}x${Math.round(r.height)})`);
+      }
+      return small;
+    });
+  await open(page, '/', 'start');
+  const screens: [string, () => Promise<unknown>][] = [
+    ['Today', async () => {}],
+    ['List', () => page.getByRole('button', { name: 'List', exact: true }).click()],
+    ['Task', () => page.locator('[data-id="garden/choose-a-fence"]').click()],
+    ['New', () => page.getByRole('button', { name: 'New', exact: true }).click()],
+    ['Waiting', () => page.getByRole('button', { name: /Waiting/ }).click()],
+    ['Paths', async () => {
+      await page.getByRole('button', { name: 'Learn' }).click();
+      await page.getByTestId('learn-all-paths').click();
+    }],
+    ['Path', () => page.getByTestId('paths').getByRole('button', { name: /Rust lernen/ }).click()],
+    ['Meeting', async () => {
+      await page.getByRole('button', { name: 'Today', exact: true }).click();
+      await page.getByTestId('meetings').locator(MEETING).click();
+      await expect(page.getByTestId('participants')).toContainText('Anna Berger');
+    }],
+  ];
+  for (const [name, go] of screens) {
+    await go();
+    expect(await measure(), name).toEqual([]);
+  }
+});
