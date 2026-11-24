@@ -50,6 +50,12 @@ export function checkAttachment(file: NewAttachment, count: number): AttachmentP
   return null;
 }
 
+/** What the hub takes as the end of a name (kept in step with its list by hand): a name outside it is refused with 415. */
+export const HUB_EXTENSIONS = {
+  photo: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'avif', 'heic', 'heif', 'bmp', 'tif', 'tiff', 'svg'],
+  voice: ['m4a', 'mp3', 'aac', 'ogg', 'oga', 'opus', 'wav', 'flac', 'weba', 'webm', 'mp4', '3gp', 'amr'],
+};
+
 const EXTENSIONS: Record<string, string> = {
   'image/jpeg': 'jpg',
   'image/png': 'png',
@@ -73,7 +79,7 @@ const EXTENSIONS: Record<string, string> = {
 export function assetName(kind: AttachmentKind, type: string, at: Date, n: number): string {
   const pad = (v: number) => String(v).padStart(2, '0');
   const stamp = `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}-${pad(at.getHours())}${pad(at.getMinutes())}`;
-  const ext = EXTENSIONS[type.split(';')[0]!.trim().toLowerCase()] ?? (kind === 'photo' ? 'img' : 'audio');
+  const ext = EXTENSIONS[type.split(';')[0]!.trim().toLowerCase()] ?? (kind === 'photo' ? 'jpg' : 'webm');
   return `${kind}-${stamp}${n > 1 ? `-${n}` : ''}.${ext}`;
 }
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { acceptedType, assetName, checkAttachment, MAX_FILE_BYTES, MAX_FILES, restoreRef, sizeText } from './attach';
+import { acceptedType, assetName, checkAttachment, HUB_EXTENSIONS, MAX_FILE_BYTES, MAX_FILES, restoreRef, sizeText } from './attach';
 import { clock, startRecording, voiceType, type RecorderDeps } from './recorder';
 
 const blob = (size: number, type: string) => ({ size, type }) as Blob;
@@ -25,7 +25,15 @@ describe('attachments', () => {
     const at = new Date(2026, 10, 10, 9, 5);
     expect(assetName('photo', 'image/jpeg', at, 1)).toBe('photo-2026-11-10-0905.jpg');
     expect(assetName('voice', 'audio/webm;codecs=opus', at, 2)).toBe('voice-2026-11-10-0905-2.webm');
-    expect(assetName('voice', 'audio/x-unknown', at, 1)).toBe('voice-2026-11-10-0905.audio');
+    expect(assetName('voice', 'audio/x-unknown', at, 1)).toBe('voice-2026-11-10-0905.webm');
+  });
+
+  it('only makes names whose end the hub takes, also for a type it does not know', () => {
+    const at = new Date(2026, 10, 10, 9, 5);
+    const photos = ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif', 'image/gif', 'image/x-unknown', ''];
+    const voices = ['audio/webm', 'audio/ogg', 'audio/mp4', 'audio/x-m4a', 'audio/mpeg', 'audio/aac', 'audio/wav', 'audio/x-unknown', ''];
+    for (const t of photos) expect(HUB_EXTENSIONS.photo).toContain(assetName('photo', t, at, 1).split('.').pop());
+    for (const t of voices) expect(HUB_EXTENSIONS.voice).toContain(assetName('voice', t, at, 1).split('.').pop());
   });
 
   it('reads back only what it wrote (MSEC-13)', () => {
