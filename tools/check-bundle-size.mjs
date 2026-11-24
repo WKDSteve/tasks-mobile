@@ -17,9 +17,15 @@ export const BUDGET = { rawBytes: 283_000, gzipBytes: 85_000 };
 
 const START = new Set(['.html', '.js', '.css']);
 
-/** The files of `dir` that a phone loads at the start, with their raw and gzip sizes. */
+/**
+ * The files of `dir` that a phone loads at the start, with their raw and gzip sizes.
+ * @param {string} dir
+ * @returns {{ path: string, raw: number, gzip: number }[]}
+ */
 export function measure(dir) {
+  /** @type {{ path: string, raw: number, gzip: number }[]} */
   const files = [];
+  /** @param {string} folder */
   const walk = (folder) => {
     for (const name of readdirSync(folder)) {
       const path = join(folder, name);
@@ -34,7 +40,11 @@ export function measure(dir) {
   return files;
 }
 
-/** The totals, and whether they are within `budget`. */
+/**
+ * The totals, and whether they are within `budget`.
+ * @param {{ path: string, raw: number, gzip: number }[]} files
+ * @param {{ rawBytes: number, gzipBytes: number }} [budget]
+ */
 export function judge(files, budget = BUDGET) {
   const raw = files.reduce((n, f) => n + f.raw, 0);
   const gzip = files.reduce((n, f) => n + f.gzip, 0);

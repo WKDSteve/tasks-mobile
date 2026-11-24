@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest';
-// @ts-expect-error a plain script of the tools folder, without types
 import { BUDGET, judge } from './check-bundle-size.mjs';
 
 describe('the size budget of the start', () => {
