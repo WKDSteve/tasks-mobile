@@ -206,6 +206,47 @@ export interface MeetingBrief {
   icon: string | null;
 }
 
+/**
+ * A contact as the phone shows it (the hub's cut, `tasks.contacts`): who the person is. The mail addresses and the
+ * numbers are there only when the hub let them out (a public area, or the PC's choice for an internal one); the lists
+ * are empty otherwise, and `data` says which of the two it is.
+ */
+export interface ContactBrief {
+  id: string;
+  area: string;
+  name: string;
+  org: string | null;
+  role: string | null;
+  tz: string | null;
+  tags: string[];
+  emails: string[];
+  phones: string[];
+  /** The hub gave this contact's addresses, numbers and notes (and takes writes for it). */
+  data: boolean;
+  /** The first paragraph of the text, only when `data`. */
+  summary: string | null;
+  /** The version the page read; a change of the contact names it (`if_match`). */
+  etag: string | null;
+}
+
+export interface ContactDetail {
+  contact: ContactBrief;
+  /** The notes of the contact (`## Notizen`), only when `data`; empty otherwise. */
+  notes: string;
+  /** The meetings of the shown areas the contact was in. */
+  history: { id: string; title: string; present: boolean }[];
+}
+
+/** The fields of the contact form: what a phone writes (`device_op_fields` of the hub says the same). */
+export interface ContactFields {
+  org?: string | null;
+  role?: string | null;
+  emails?: string[];
+  phones?: string[];
+  tz?: string | null;
+  tags?: string[];
+}
+
 /** A line of the minutes, as the engine wrote it into `## Protokoll` (its time and its text). */
 export interface MinuteLine {
   at: string;
@@ -251,7 +292,9 @@ export type Op =
   | { op: 'node_set'; id: string; point: string; state: PointState; reason?: string; ack?: true; if_match?: string }
   | { op: 'meeting_capture'; id: string; entry: { kind: CaptureKind; text: string; at?: string } }
   | { op: 'meeting_capture'; id: string; entry: { kind: MediaCaptureKind; asset: string; at?: string } }
-  | { op: 'meeting_attend'; id: string; name: string; present: boolean };
+  | { op: 'meeting_attend'; id: string; name: string; present: boolean }
+  | { op: 'contact_new'; area: string; name: string; fields?: ContactFields }
+  | { op: 'contact_set'; id: string; patch: ContactFields & { name?: string }; if_match?: string };
 
 export type OpErrorCode =
   | 'invalid_argument'

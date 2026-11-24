@@ -105,6 +105,20 @@ function validOp(value: unknown): value is QueueOp {
         op['name'].length <= 200 &&
         typeof op['present'] === 'boolean'
       );
+    case 'contact_new':
+      return isAreaName(op['area']) && validName(op['name']) && (op['fields'] === undefined || validFields(op['fields']));
+    case 'contact_set': {
+      const patch = op['patch'] as Record<string, unknown> | undefined;
+      return (
+        isTaskId(op['id']) &&
+        typeof patch === 'object' &&
+        patch !== null &&
+        Object.keys(patch).length > 0 &&
+        (patch['name'] === undefined || validName(patch['name'])) &&
+        validFields({ ...patch, name: undefined }) &&
+        ifMatch
+      );
+    }
     case 'meeting_file':
       return isTaskId(op['id']) && restoreRef(op['file']) !== null && validAt(op['at']);
     case 'upload':
@@ -114,6 +128,25 @@ function validOp(value: unknown): value is QueueOp {
   }
 }
 
+function validName(value: unknown): boolean {
+  return typeof value === 'string' && value.trim().length > 0 && value.length <= 200;
+}
+
+/** The fields of a contact the form writes: text or none (clears it), lists of short texts. Nothing else is queued. */
+function validFields(value: unknown): boolean {
+  if (typeof value !== 'object' || value === null) return false;
+  const fields = value as Record<string, unknown>;
+  for (const [key, v] of Object.entries(fields)) {
+    if (v === undefined) continue;
+    if (key === 'org' || key === 'role' || key === 'tz') {
+      if (v !== null && (typeof v !== 'string' || v.length > 200)) return false;
+    } else if (key === 'emails' || key === 'phones' || key === 'tags') {
+      if (!Array.isArray(v) || v.length > 20 || !v.every((x) => typeof x === 'string' && x.length > 0 && x.length <= 254)) return false;
+    } else return false;
+  }
+  return true;
+}
+
 /** A time of the phone, `HH:MM`, or none. */
 function validAt(at: unknown): boolean {
   return at === undefined || (typeof at === 'string' && /^\d{2}:\d{2}$/.test(at));
@@ -121,11 +154,11 @@ function validAt(at: unknown): boolean {
 
 /** A change of a task is queued only with the version the person saw (MOB-08); a new task and finishing need none. */
 function needsIfMatch(op: QueueOp): boolean {
-  return op.op === 'set' || op.op === 'answer' || op.op === 'node_set';
+  return op.op === 'set' || op.op === 'answer' || op.op === 'node_set' || op.op === 'contact_set';
 }
 
 function ifMatchOf(op: QueueOp): string | undefined {
-  return op.op === 'set' || op.op === 'answer' || op.op === 'node_set' ? op.if_match : undefined;
+  return op.op === 'set' || op.op === 'answer' || op.op === 'node_set' || op.op === 'contact_set' ? op.if_match : undefined;
 }
 
 /**

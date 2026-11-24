@@ -4,7 +4,7 @@
 
 import type { PushSubscriptionBody } from './push';
 import type { Right } from './rights';
-import type { ConfirmRequest, DonePreview, HubHello, LearnSeries, LearnStep, MeetingBrief, MeetingDetail, Op, OpOutcome, PathBrief, PathDetail, TaskDetail, TestingRun, UploadKind, VaultView } from './types';
+import type { ConfirmRequest, ContactBrief, ContactDetail, DonePreview, HubHello, LearnSeries, LearnStep, MeetingBrief, MeetingDetail, Op, OpOutcome, PathBrief, PathDetail, TaskDetail, TestingRun, UploadKind, VaultView } from './types';
 
 /** The hub could not be reached at all (no tunnel, no network): the page is offline, the write waits. */
 export class Unreachable extends Error {
@@ -66,6 +66,10 @@ export interface DataSource {
   meetings(since: string, until: string): Promise<{ meetings: MeetingBrief[]; partial: boolean }>;
   /** One meeting with its agenda, its minutes and its follow-ups. */
   meeting(id: string): Promise<MeetingDetail>;
+  /** The contacts of the shown areas, by name (`HubRefused` from a hub that does not give them to this phone). */
+  contacts(): Promise<{ contacts: ContactBrief[]; partial: boolean }>;
+  /** One contact with its notes. */
+  contact(id: string): Promise<ContactDetail>;
   /** One operation, one request: its own `client_op_id`, so the hub can tell a repeat. */
   write(clientOpId: string, op: Op): Promise<OpOutcome>;
   donePreview(id: string): Promise<DonePreview>;

@@ -40,6 +40,12 @@ function source(answers: ((op: QueueOp) => OpOutcome | Error)[]): DataSource & {
     meetings: async () => {
       throw new Error('unused');
     },
+    contacts: async () => {
+      throw new Error('unused');
+    },
+    contact: async () => {
+      throw new Error('unused');
+    },
     meeting: async () => {
       throw new Error('unused');
     },

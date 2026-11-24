@@ -6,11 +6,11 @@
 //
 // The names are neutral (APP-01): nothing here is a real area or a real task.
 
-import { areaClasses, deviceLevel, donePreview, hubHello, learnSeries, learnSteps, meetingDetail, meetingList, testingRun, testingSheets, opOutcome, pathDetail, pathList, taskDetail, vaultView } from './parse';
+import { areaClasses, contactDetail, contactList, deviceLevel, donePreview, hubHello, learnSeries, learnSteps, meetingDetail, meetingList, testingRun, testingSheets, opOutcome, pathDetail, pathList, taskDetail, vaultView } from './parse';
 import { AnswerLost, HubRefused, Unreachable, type DataSource } from './source';
 import type { PushSubscriptionBody } from './push';
 import type { Right } from './rights';
-import type { ConfirmRequest, DataClass, DonePreview, HubHello, LearnSeries, LearnStep, MeetingBrief, MeetingDetail, Op, OpOutcome, PathBrief, PathDetail, TaskDetail, TestingRun, UploadKind, VaultView } from './types';
+import type { ConfirmRequest, ContactBrief, ContactDetail, ContactFields, DataClass, DonePreview, HubHello, LearnSeries, LearnStep, MeetingBrief, MeetingDetail, Op, OpOutcome, PathBrief, PathDetail, TaskDetail, TestingRun, UploadKind, VaultView } from './types';
 
 interface FakeTask {
   id: string;
@@ -236,6 +236,28 @@ function initialLearnLog(): Map<string, { learned: number; seen: number; xp: num
   ]);
 }
 
+/** A contact of the fake vault. The hub gives the addresses and numbers of a public area only (here: garden). */
+interface FakeContact {
+  id: string;
+  area: string;
+  name: string;
+  org?: string;
+  role?: string;
+  emails: string[];
+  phones: string[];
+  tags: string[];
+  notes: string;
+  etag: number;
+}
+
+function initialContacts(): FakeContact[] {
+  return [
+    { id: 'garden/anna-berger', area: 'garden', name: 'Anna Berger', org: 'Gartenbau Berger', role: 'Chefin', emails: ['anna@example.org'], phones: ['+49 170 1234567'], tags: ['zaun'], notes: 'Liefert Holz.', etag: 1 },
+    { id: 'kitchen/ben-huber', area: 'kitchen', name: 'Ben Huber', org: 'Huber KG', emails: ['ben@example.org'], phones: ['+49 30 998877'], tags: [], notes: 'Nur intern.', etag: 1 },
+    { id: 'vault-secret/geheim', area: 'vault-secret', name: 'SECRET-MARKER', emails: ['secret@example.org'], phones: ['+49 1'], tags: [], notes: 'SECRET-MARKER', etag: 1 },
+  ];
+}
+
 /** A meeting of the fake vault, `inDays` from today; its minutes are lines `HH:MM text`. */
 interface FakeMeeting {
   id: string;
@@ -334,6 +356,7 @@ export class FakeSource implements DataSource, FakeControls {
   /** Whether this fake hub has the reads of the page Lernen (a test takes them away to see the page without them). */
   learnRoutes = true;
   private gatherings = initialMeetings();
+  private people = initialContacts();
   private rev = 1;
   private seen = new Map<string, OpOutcome>();
 
@@ -616,6 +639,57 @@ export class FakeSource implements DataSource, FakeControls {
     );
   }
 
+  /** A contact as the hub cuts it: the addresses, numbers and notes of a public area only, never `file`. */
+  private contactEntry(c: FakeContact): Record<string, unknown> {
+    const open = CLASSES[c.area] === 'public';
+    return {
+      id: c.id,
+      area: c.area,
+      slug: c.id.split('/')[1],
+      name: c.name,
+      ...(c.org ? { org: c.org } : {}),
+      ...(c.role ? { role: c.role } : {}),
+      tags: c.tags,
+      ...(open ? { emails: c.emails, phones: c.phones, summary: c.notes } : {}),
+      etag: `c${c.etag}`,
+      valid: true,
+    };
+  }
+
+  async contacts(): Promise<{ contacts: ContactBrief[]; partial: boolean }> {
+    this.reachable();
+    const doc = { ...HEAD, kind: 'tasks.contacts', items: this.people.map((c) => this.contactEntry(c)), partial: false };
+    return contactList(doc, this.classes());
+  }
+
+  async contact(id: string): Promise<ContactDetail> {
+    this.reachable();
+    const c = this.people.find((x) => x.id === id);
+    if (!c || (CLASSES[c.area] !== 'public' && CLASSES[c.area] !== 'internal')) throw new HubRefused(404, 'not_found', `no such contact: ${id}`);
+    const open = CLASSES[c.area] === 'public';
+    return contactDetail(
+      {
+        ...HEAD,
+        kind: 'tasks.contact',
+        contact: this.contactEntry(c),
+        body: '',
+        notes: open ? c.notes : '',
+        history: [{ id: 'garden/zaun-besprechen', title: 'Zaun besprechen', present: true }],
+      },
+      this.classes(),
+    );
+  }
+
+  /** The fields of a write as the fake keeps them (the engine's own checks are not repeated here). */
+  private setFields(c: FakeContact, fields: ContactFields & { name?: string }): void {
+    if (fields.name !== undefined) c.name = fields.name;
+    if (fields.org !== undefined) c.org = fields.org ?? undefined;
+    if (fields.role !== undefined) c.role = fields.role ?? undefined;
+    if (fields.emails !== undefined) c.emails = fields.emails;
+    if (fields.phones !== undefined) c.phones = fields.phones;
+    if (fields.tags !== undefined) c.tags = fields.tags;
+  }
+
   async learnNext(): Promise<{ steps: LearnStep[]; partial: boolean }> {
     this.reachable();
     if (!this.learnRoutes) throw new HubRefused(403, 'not_for_devices', 'this route is not released for devices');
@@ -773,6 +847,24 @@ export class FakeSource implements DataSource, FakeControls {
       if (!person) return this.result(false, m.id, { code: 'not_found', message: 'no such participant' });
       person.present = op.present;
       return this.result(true, m.id);
+    }
+    // Like the hub: a phone writes a contact only where its data is released (here: a public area).
+    if (op.op === 'contact_new') {
+      if (CLASSES[op.area] !== 'public') return this.result(false, null, { code: 'forbidden', message: 'area not open to this device' });
+      let id = `${op.area}/${slugOf(op.name)}`;
+      for (let n = 2; this.people.some((c) => c.id === id); n += 1) id = `${op.area}/${slugOf(op.name)}-${n}`;
+      const c: FakeContact = { id, area: op.area, name: op.name, emails: [], phones: [], tags: [], notes: '', etag: 1 };
+      this.setFields(c, op.fields ?? {});
+      this.people.push(c);
+      return this.result(true, id);
+    }
+    if (op.op === 'contact_set') {
+      const c = this.people.find((x) => x.id === op.id);
+      if (!c || CLASSES[c.area] !== 'public') return this.result(false, null, { code: 'not_found', message: 'no such contact' });
+      if (op.if_match !== undefined && op.if_match !== `c${c.etag}`) return this.result(false, c.id, { code: 'conflict', message: 'the file changed since it was read' });
+      this.setFields(c, op.patch);
+      c.etag += 1;
+      return this.result(true, c.id);
     }
     if (op.op === 'node_set') {
       const p = this.learning.find((x) => x.id === op.id);

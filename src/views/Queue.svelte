@@ -34,6 +34,10 @@
           : t('queue.op.meeting_capture', { label, text: markHidden(item.op.entry.text) });
       case 'meeting_file':
         return t('queue.op.upload', { label, name: item.op.file.name });
+      case 'contact_new':
+        return t('queue.op.contact_new', { label });
+      case 'contact_set':
+        return t('queue.op.contact_set', { label });
       case 'meeting_attend':
         return t(item.op.present ? 'queue.op.attend' : 'queue.op.absent', { label, name: markHidden(item.op.name) });
     }

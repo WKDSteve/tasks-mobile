@@ -27,6 +27,9 @@ Done in tasks-desktop (its `mobile.lock`, `tools/build-mobile.py`, `crates/tasks
   `/api/tasks/meetings`, `/api/tasks/meeting` (the meetings, cut by the class of their area; a line of the minutes is
   written with `meeting_capture`, a participant ticked by name with `meeting_attend` where the hub gave the
   participants);
+  `/api/tasks/contacts`, `/api/tasks/contact` (the contacts, cut by the class of their area; the addresses, numbers and
+  notes only where the hub released them; written with `contact_new` at `create` and `contact_set` at `change`, in a
+  released area only, and never deleted);
   `POST /api/tasks/ops` (one operation per request), `POST /api/tasks/testing_start` (with `x-device-confirm`, the
   device's confirmation of that very request), `POST /api/tasks/upload?id=` (a file of a captured task, after the
   `new`; the body is the file, `X-Upload-Name` its name; with `kind=image` or `kind=audio` a photo or a voice note of a

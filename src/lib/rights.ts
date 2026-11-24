@@ -15,12 +15,14 @@ export function rightFor(op: Op): Right {
   switch (op.op) {
     case 'new':
     case 'answer':
+    case 'contact_new':
       return 'create';
     case 'set':
     case 'done':
     case 'node_set':
     case 'meeting_capture':
     case 'meeting_attend':
+    case 'contact_set':
       return 'change';
   }
 }

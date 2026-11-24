@@ -34,6 +34,11 @@ What is there:
   the participants out (a public area, or an internal one it allows), they are ticked present by name. A notice before
   a meeting begins or after it ended opens it. Read only while the PC can be reached; what is written waits in the
   queue like any change.
+- **Contacts**: Today opens the contacts of the shown areas by name, with a search. A contact shows who the person is;
+  where the PC lets the data out (a public area, or an internal one it allows with the same setting as the people of a
+  meeting) its numbers are `tel:` links and its addresses `mailto:` links, with its notes and meetings. The form makes a
+  new contact and changes one (never deletes): only where the data is released, only the fields of the form. A contact
+  of a private or unclassified area is not there. No address and no number is put into a notice or a problem.
 - **Learn**: first the tile **My learning** with a period (Today, Week, Month, Quarter, Year; kept on this phone) and
   its figures from the series of the learning figures (points learned, XP, learning time, learning days, the streak),
   each against as many days of the period before in words with ▲/▼, and the next step of each running path, ticked on

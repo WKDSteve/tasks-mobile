@@ -67,6 +67,8 @@ function sourceFor(fake: FakeSource, dead: Set<string | null>): (token: string |
       paths: () => gate(() => fake.paths()),
       meetings: (since, until) => gate(() => fake.meetings(since, until)),
       meeting: (id) => gate(() => fake.meeting(id)),
+      contacts: () => gate(() => fake.contacts()),
+      contact: (id) => gate(() => fake.contact(id)),
       path: (id) => gate(() => fake.path(id)),
       learnNext: () => gate(() => fake.learnNext()),
       learnHistory: (since, until) => gate(() => fake.learnHistory(since, until)),
@@ -231,6 +233,61 @@ describe('App on the synthetic vault', () => {
     expect(app.meetingView?.minutes.map((m) => m.text)).toContain('Aufgabe: Milch kaufen');
     expect(await app.captureLine('text', '   ')).toBe(false);
     expect(fake.writes).toHaveLength(1);
+  });
+
+  it('reads the contacts of the shown areas: the data of a public one only, and writes them through the queue', async () => {
+    const fake = new FakeSource();
+    const app = new App(deps(fake));
+    await app.start(null);
+    expect(app.contacts).toBeNull();
+    await app.openContacts();
+    expect(app.screen).toBe('contacts');
+    // The private area is not there; the internal one is there by name, without address and number.
+    expect(app.contacts?.map((c) => c.id)).toEqual(['garden/anna-berger', 'kitchen/ben-huber']);
+    const ben = app.contacts![1]!;
+    expect([ben.data, ben.emails, ben.phones]).toEqual([false, [], []]);
+    await app.openContact(app.contacts![0]!);
+    expect(app.contactView?.contact.emails).toEqual(['anna@example.org']);
+    expect(app.contactView?.notes).toBe('Liefert Holz.');
+    // A change names the version it saw, and the contact reads back with it.
+    app.openContactForm(app.contactView!.contact);
+    const done = await app.saveContact({ area: 'garden', name: 'Anna Berger', org: 'Berger GmbH', role: 'Chefin', emails: 'anna@example.org', phones: '+49 170 1234567', tags: 'zaun' });
+    expect(done).toEqual({ ok: true });
+    expect(fake.writes.map((w) => w.op)).toEqual([{ op: 'contact_set', id: 'garden/anna-berger', patch: { org: 'Berger GmbH' }, if_match: 'c1' }]);
+    expect(app.contactView?.contact.org).toBe('Berger GmbH');
+    // A new one.
+    app.openContactForm(null);
+    expect(await app.saveContact({ area: 'garden', name: 'Cora Roth', org: '', role: '', emails: 'cora@example.org', phones: '', tags: '' })).toEqual({ ok: true });
+    expect(app.screen).toBe('contacts');
+    expect(app.contacts?.map((c) => c.name)).toContain('Cora Roth');
+    // A bad address is a problem of the field, nothing is queued, and no text of it is said.
+    app.openContactForm(null);
+    const bad = await app.saveContact({ area: 'garden', name: 'X', org: '', role: '', emails: 'not-an-address', phones: '', tags: '' });
+    expect(bad).toEqual({ ok: false, problems: ['email'] });
+    expect(fake.writes).toHaveLength(2);
+  });
+
+  it('a phone below `create` or `change` writes no contact', async () => {
+    const fake = new FakeSource();
+    fake.deviceLevel = 'read';
+    const app = new App(deps(fake));
+    await app.start(null);
+    await app.openContacts();
+    app.openContactForm(null);
+    expect(await app.saveContact({ area: 'garden', name: 'Cora', org: '', role: '', emails: '', phones: '', tags: '' })).toEqual({ ok: false, problems: [] });
+    expect(app.notice?.key).toBe('task.not_allowed');
+    expect(fake.writes).toHaveLength(0);
+  });
+
+  it('a hub that gives the phone no contacts says so and shows none', async () => {
+    const fake = new FakeSource();
+    fake.contacts = () => Promise.reject(new HubRefused(403, 'not_for_devices', 'this route is not released for devices'));
+    const app = new App(deps(fake));
+    await app.start(null);
+    await app.openContacts();
+    expect(app.contactsRefused).toBe(true);
+    expect(app.contacts).toBeNull();
+    expect(app.notice).toBeNull();
   });
 
   it('a photo goes into the minutes of the meeting: the file to the meeting, then its line', async () => {

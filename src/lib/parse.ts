@@ -10,6 +10,8 @@ import type {
   NextPick,
   OpErrorCode,
   OpOutcome,
+  ContactBrief,
+  ContactDetail,
   MeetingBrief,
   MeetingDetail,
   MinuteLine,
@@ -418,6 +420,86 @@ export function pathDetail(doc: unknown, classes: Map<string, DataClass>): PathD
     : [];
   const rawBody = typeof doc['body'] === 'string' ? doc['body'] : '';
   return { path, body: rawBody.slice(0, MAX_BODY), points };
+}
+
+/** The longest list of contacts taken (the hub sends one page of at most 100). */
+export const MAX_CONTACTS = 100;
+/** The most addresses and numbers of one contact. */
+const MAX_REACH = 20;
+
+/** A mail address as the page links it: one `@`, no space, no control character, nothing that makes a link a script. */
+export function plainEmail(value: unknown): string | null {
+  const text = str(value, 254);
+  return text !== null && /^[^\s@<>"'`\\?#%&]+@[^\s@<>"'`\\?#%&]+\.[^\s@<>"'`\\?#%&]+$/.test(text) ? text : null;
+}
+
+/** A phone number as the page links it: digits and the signs of a number, nothing else (no `;` that adds a command). */
+export function plainPhone(value: unknown): string | null {
+  const text = str(value, 40);
+  return text !== null && /^\+?[0-9][0-9 ()./-]{2,38}$/.test(text) ? text : null;
+}
+
+function reach(value: unknown, one: (v: unknown) => string | null): string[] {
+  return Array.isArray(value)
+    ? value
+        .slice(0, MAX_REACH)
+        .map(one)
+        .filter((v): v is string => v !== null)
+    : [];
+}
+
+/** A contact of the list; null when it is no contact of a shown area (the hub cut already; the page checks again). */
+export function contactBrief(value: unknown, classes: Map<string, DataClass>): ContactBrief | null {
+  if (!isObj(value)) return null;
+  const id = value['id'];
+  const area = value['area'];
+  const name = str(value['name'], 200);
+  if (!isTaskId(id) || !isAreaName(area) || id.split('/')[0] !== area || name === null || name === '') return null;
+  if (!shownClass(classes.get(area) ?? 'unclassified')) return null;
+  // The hub leaves the fields out of a contact whose data it does not release: no `emails` at all says "not given".
+  const data = Array.isArray(value['emails']) || Array.isArray(value['phones']);
+  const tags = Array.isArray(value['tags']) ? value['tags'].map((x) => str(x, 40)).filter((x): x is string => x !== null && x !== '') : [];
+  return {
+    id,
+    area,
+    name,
+    org: str(value['org'], 200),
+    role: str(value['role'], 200),
+    tz: str(value['tz'], 64),
+    tags: tags.slice(0, 20),
+    emails: reach(value['emails'], plainEmail),
+    phones: reach(value['phones'], plainPhone),
+    data,
+    summary: data ? str(value['summary'], 500) : null,
+    etag: str(value['etag'], 100),
+  };
+}
+
+/** `tasks.contacts` as the hub cut it, by name; `partial`: the page held more. */
+export function contactList(doc: unknown, classes: Map<string, DataClass>): { contacts: ContactBrief[]; partial: boolean } {
+  if (!isObj(doc) || doc['kind'] !== 'tasks.contacts' || !Array.isArray(doc['items'])) throw new ShapeError('contacts');
+  const contacts = doc['items']
+    .slice(0, MAX_CONTACTS)
+    .map((item) => contactBrief(item, classes))
+    .filter((c): c is ContactBrief => c !== null)
+    .sort((a, b) => a.name.localeCompare(b.name));
+  return { contacts, partial: doc['partial'] === true };
+}
+
+/** `tasks.contact` as the hub cut it; a contact of an area this phone does not show is refused. */
+export function contactDetail(doc: unknown, classes: Map<string, DataClass>): ContactDetail {
+  if (!isObj(doc) || doc['kind'] !== 'tasks.contact') throw new ShapeError('contact');
+  const contact = contactBrief(doc['contact'], classes);
+  if (contact === null) throw new ShapeError('contact of a hidden area');
+  const history = Array.isArray(doc['history']) ? doc['history'].filter(isObj) : [];
+  return {
+    contact,
+    notes: contact.data && typeof doc['notes'] === 'string' ? doc['notes'].slice(0, MAX_BODY) : '',
+    history: history
+      .slice(0, 50)
+      .map((h) => ({ id: h['id'], title: str(h['title']), present: h['present'] === true }))
+      .filter((h): h is { id: string; title: string; present: boolean } => isTaskId(h.id) && h.title !== null),
+  };
 }
 
 /** The longest list of meetings taken (the hub sends one page of at most 100). */

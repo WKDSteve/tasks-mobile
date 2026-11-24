@@ -2,11 +2,11 @@
 // the kit's `HubClient`; this file maps the routes and turns every failure into one of the errors of `source.ts`.
 
 import { HubClient } from 'appkit-ui/client';
-import { areaClasses, deviceLevel, donePreview, hubHello, learnSeries, learnSteps, meetingDetail, meetingList, OP_ERROR_CODES, opOutcome, pathDetail, pathList, taskDetail, testingRun, testingSheets, vaultView } from './parse';
+import { areaClasses, contactDetail, contactList, deviceLevel, donePreview, hubHello, learnSeries, learnSteps, meetingDetail, meetingList, OP_ERROR_CODES, opOutcome, pathDetail, pathList, taskDetail, testingRun, testingSheets, vaultView } from './parse';
 import { pushKey, type PushSubscriptionBody } from './push';
 import type { Right } from './rights';
 import { AnswerLost, HubRefused, Unpaired, Unreachable, type DataSource } from './source';
-import type { ConfirmRequest, DataClass, DonePreview, HubHello, LearnSeries, LearnStep, MeetingBrief, MeetingDetail, Op, OpErrorCode, OpOutcome, PathBrief, PathDetail, TaskDetail, TestingRun, UploadKind, VaultView } from './types';
+import type { ConfirmRequest, ContactBrief, ContactDetail, DataClass, DonePreview, HubHello, LearnSeries, LearnStep, MeetingBrief, MeetingDetail, Op, OpErrorCode, OpOutcome, PathBrief, PathDetail, TaskDetail, TestingRun, UploadKind, VaultView } from './types';
 
 /** How long a read may take before the page calls the hub unreachable (MSEC-08). */
 export const READ_TIMEOUT_MS = 15_000;
@@ -115,6 +115,16 @@ export class HubSource implements DataSource {
   async meeting(id: string): Promise<MeetingDetail> {
     if (this.classes.size === 0) this.classes = areaClasses(await this.read('/api/tasks/areas'));
     return meetingDetail(await this.read(`/api/tasks/meeting?id=${idParam(id)}`), this.classes);
+  }
+
+  async contacts(): Promise<{ contacts: ContactBrief[]; partial: boolean }> {
+    if (this.classes.size === 0) this.classes = areaClasses(await this.read('/api/tasks/areas'));
+    return contactList(await this.read('/api/tasks/contacts?limit=100'), this.classes);
+  }
+
+  async contact(id: string): Promise<ContactDetail> {
+    if (this.classes.size === 0) this.classes = areaClasses(await this.read('/api/tasks/areas'));
+    return contactDetail(await this.read(`/api/tasks/contact?id=${idParam(id)}`), this.classes);
   }
 
   async path(id: string): Promise<PathDetail> {

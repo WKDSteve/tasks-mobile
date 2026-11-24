@@ -14,6 +14,9 @@
   import PathView from './views/PathView.svelte';
   import MeetingList from './views/MeetingList.svelte';
   import MeetingView from './views/MeetingView.svelte';
+  import ContactList from './views/ContactList.svelte';
+  import ContactView from './views/ContactView.svelte';
+  import ContactForm from './views/ContactForm.svelte';
 
   let { app, shared, storageMissing }: { app: App; shared: Shared | null; storageMissing: boolean } = $props();
 
@@ -76,6 +79,12 @@
     <MeetingList {app} {t} />
   {:else if app.screen === 'meeting'}
     <MeetingView {app} {t} />
+  {:else if app.screen === 'contacts'}
+    <ContactList {app} {t} />
+  {:else if app.screen === 'contact'}
+    <ContactView {app} {t} />
+  {:else if app.screen === 'contactform'}
+    <ContactForm {app} {t} />
   {:else}
     <TaskList {app} {t} />
   {/if}

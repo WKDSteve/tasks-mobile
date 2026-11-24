@@ -107,6 +107,7 @@
 </section>
 
 <MeetingList {app} {t} limit={3} />
+<p><button data-testid="open-contacts" onclick={() => void app.openContacts()}>{t('contacts.open')}</button></p>
 
 <style>
   section {

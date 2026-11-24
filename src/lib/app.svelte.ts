@@ -11,13 +11,14 @@ import { AnswerLost, HubRefused, Unpaired, Unreachable, type DataSource } from '
 import { parsePeriod, periodFrame, type LearnPeriod, type PeriodFrame } from './learn';
 import type { KeptView } from './storage';
 import { isFresh } from './storage';
+import { contactOp, type ContactForm, type ContactProblem } from './contactForm';
 import { localDay } from './today';
 import type { CacheStore } from 'appkit-ui/cache';
-import type { CaptureKind, ConfirmRequest, DonePreview, LearnSeries, LearnStep, MeetingBrief, MeetingDetail, Op, PathBrief, PathDetail, PathPoint, PointState, Status, TaskBrief, TaskDetail, TestingRun, VaultView } from './types';
+import type { CaptureKind, ConfirmRequest, ContactBrief, ContactDetail, DonePreview, LearnSeries, LearnStep, MeetingBrief, MeetingDetail, Op, PathBrief, PathDetail, PathPoint, PointState, Status, TaskBrief, TaskDetail, TestingRun, VaultView } from './types';
 import type { TextKey } from './i18n';
 import type { Shared } from './share';
 
-export type Screen = 'pair' | 'today' | 'list' | 'capture' | 'queue' | 'task' | 'learn' | 'paths' | 'path' | 'meetings' | 'meeting';
+export type Screen = 'pair' | 'today' | 'list' | 'capture' | 'queue' | 'task' | 'learn' | 'paths' | 'path' | 'meetings' | 'meeting' | 'contacts' | 'contact' | 'contactform';
 export type Connection = 'checking' | 'live' | 'offline';
 
 export interface AppDeps {
@@ -606,6 +607,89 @@ export class App {
       if (!item) return false;
       await this.readMeeting();
       return true;
+    } finally {
+      this.busy = false;
+    }
+  }
+
+  /**
+   * The contacts of the shown areas, as last read (on opening the page, not with the list: they are far from every
+   * start); null: not read, or the hub gives none to this phone (`contactsRefused`).
+   */
+  contacts = $state<ContactBrief[] | null>(null);
+  contactsPartial = $state(false);
+  /** The hub answered that this phone gets no contacts (an older hub): the page says so and offers nothing. */
+  contactsRefused = $state(false);
+  /** The contact opened, with its notes once read. */
+  openedContact = $state<ContactBrief | null>(null);
+  contactView = $state<ContactDetail | null>(null);
+  /** The contact the form edits; null: the form makes a new one. */
+  editingContact = $state<ContactBrief | null>(null);
+
+  async openContacts(): Promise<void> {
+    this.screen = 'contacts';
+    await this.readContacts();
+  }
+
+  private async readContacts(): Promise<void> {
+    if (!this.source || this.connection !== 'live') return;
+    try {
+      const read = await this.source.contacts();
+      this.contacts = read.contacts;
+      this.contactsPartial = read.partial;
+      this.contactsRefused = false;
+    } catch (error) {
+      // A hub without the contacts for this phone leaves them unread (MOB-09); a shape error or an offline hub is said.
+      if (error instanceof HubRefused && (error.code === 'not_for_devices' || error.status === 404)) {
+        this.contacts = null;
+        this.contactsRefused = true;
+      } else this.failed(error);
+    }
+  }
+
+  async openContact(brief: ContactBrief): Promise<void> {
+    this.openedContact = brief;
+    this.contactView = null;
+    this.screen = 'contact';
+    await this.readContact();
+  }
+
+  private async readContact(): Promise<void> {
+    const brief = this.openedContact;
+    if (!brief || !this.source || this.connection !== 'live') return;
+    try {
+      const detail = await this.source.contact(brief.id);
+      if (this.openedContact?.id !== brief.id) return;
+      this.contactView = detail;
+      this.openedContact = detail.contact;
+    } catch (error) {
+      if (this.openedContact?.id === brief.id) this.failed(error);
+    }
+  }
+
+  /** The form of a contact: a new one (`null`) or the opened one. */
+  openContactForm(contact: ContactBrief | null): void {
+    this.editingContact = contact;
+    this.screen = 'contactform';
+  }
+
+  /**
+   * Write the contact of the form through the queue (a new one creates, a change names the version read). The label of
+   * the write is the name: no address and no number goes into a notice, the queue's list or a problem. The problems
+   * name the field only.
+   */
+  async saveContact(form: ContactForm): Promise<{ ok: true } | { ok: false; problems: ContactProblem[] }> {
+    const before = this.editingContact;
+    const check = contactOp(form, before);
+    if (!check.ok) return check;
+    this.busy = true;
+    try {
+      const item = await this.enqueue(check.op, form.area, form.name.trim());
+      if (!item) return { ok: false, problems: [] };
+      await this.readContacts();
+      this.screen = before ? 'contact' : 'contacts';
+      if (before) await this.readContact();
+      return { ok: true };
     } finally {
       this.busy = false;
     }
