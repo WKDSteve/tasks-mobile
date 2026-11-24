@@ -167,7 +167,7 @@
           <p class="what untrusted">
             <strong>{#if step.icon}<span aria-hidden="true">{step.icon} </span>{/if}{markHidden(step.title)}</strong>
             {#if step.stage}<span class="muted">{markHidden(step.stage)}</span>{/if}
-            <span>{#if step.link}<a href={step.link} target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer">{label}</a>{:else}{label}{/if}</span>
+            <span>{#if step.link}<a class="hit" href={step.link} target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer">{label}</a>{:else}{label}{/if}</span>
             <span class="muted"
               >{#if step.hMin !== null}{t('learn.step.hours', { h: step.hMax !== null && step.hMax !== step.hMin ? `${step.hMin}–${step.hMax}` : step.hMin })}{/if}{#if game && step.xp !== null}{step.hMin !== null ? ' · ' : ''}{t('learn.step.xp', { n: step.xp })}{/if}</span
             >

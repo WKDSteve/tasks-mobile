@@ -26,3 +26,10 @@ test('the production build holds no synthetic vault and no inline script', () =>
   expect(html).not.toMatch(/<style/);
   expect(html).not.toMatch(/data:/);
 });
+
+test('the built files carry the hash of their content in the name, and the size is within the budget', () => {
+  const assets = readdirSync('dist/assets');
+  expect(assets.length).toBeGreaterThanOrEqual(2);
+  // `assets/<name>-<hash>.<ext>`: the service worker takes such a file from its cache first (public/sw.js).
+  for (const name of assets) expect(`/assets/${name}`).toMatch(/\/assets\/[^/]+-[A-Za-z0-9_-]{8}\.[a-z0-9]+$/);
+});

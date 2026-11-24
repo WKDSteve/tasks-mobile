@@ -293,7 +293,7 @@ test('starts on Today: the engine picks, open questions, what is due and the cou
   // The engine's first pick is in the area that stays on the PC: the page drops it.
   await expect(page.getByTestId('today-next').getByRole('button').first()).toHaveAttribute('data-id', 'garden/water-the-plants');
   await expect(page.getByTestId('today-questions').locator('[data-id="garden/choose-a-fence"]')).toBeVisible();
-  await expect(page.getByTestId('today-due').locator('[data-id="garden/water-the-plants"]')).toContainText('due 2026-01-10');
+  await expect(page.getByTestId('today-due').locator('[data-id="garden/water-the-plants"]')).toContainText('due Jan 10, 2026');
   await expect(page.getByTestId('today-counts').locator('[data-status="open"] dd')).toHaveText('5');
   await expect(page.getByTestId('today-counts').locator('[data-status="doing"] dd')).toHaveText('1');
   await expect(page.getByTestId('today-counts-part')).toContainText('2 areas stay on the PC');

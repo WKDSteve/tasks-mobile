@@ -1351,6 +1351,32 @@ describe('the test sheets of a task, run on the PC', () => {
     expect(app.testing?.run).toMatchObject({ running: false, verdict: 'green' });
   });
 
+  it('takes the look at a run up again when the page comes back to the front', async () => {
+    const fake = new FakeSource();
+    fake.deviceLevel = 'trigger';
+    fake.testingLinked = true;
+    const clock = manualTimer();
+    let shown = true;
+    const app = new App(deps(fake, { device: fakeDevice(true), timer: clock.timer, visible: () => shown }));
+    await app.start(null);
+    await app.openTask(app.view!.tasks.find((t) => t.id === ID)!);
+    await app.startRun(app.opened!);
+    expect(app.testing?.run).toMatchObject({ running: true });
+    expect(clock.set).toHaveLength(1);
+
+    // The page goes to the background: the look that falls due then gives up and sets no new one.
+    shown = false;
+    clock.set.shift()!.run();
+    await Promise.resolve();
+    expect(clock.set).toHaveLength(0);
+    expect(app.testing?.run).toMatchObject({ running: true });
+
+    // Back in front: one look at once (the run ended meanwhile).
+    shown = true;
+    await app.refresh();
+    await vi.waitFor(() => expect(app.testing?.run).toMatchObject({ running: false, verdict: 'green' }));
+  });
+
   it('tells a run that wrote no task as its own verdict, with the block, and reads the task again after a written block', async () => {
     const { app, fake } = await opened();
     fake.runEnd = { verdict: 'not_written', exit: 1, sheets_red: false, block: { written: false, outcome: 'missing' } };

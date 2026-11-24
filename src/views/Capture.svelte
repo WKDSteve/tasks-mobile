@@ -1,12 +1,14 @@
 <script lang="ts">
+  import { focusFirstInvalid } from '../lib/formErrors';
   // Capturing a task, with a photo or a voice note if wanted. The files are shown before the task is made, wait on
   // the phone with it, and are sent once the engine made it (`lib/queue.ts`). The microphone is asked for only when
   // the button is pressed (AND-01), and a recording stops when the page goes to the background.
   //
   // What is typed and chosen lives in `app.form`, not here: another view (Today, the list, Waiting) takes nothing away.
   // A recording still running when the form is left is ended there and kept in the form as a voice note.
-  import { onDestroy } from 'svelte';
+  import { onDestroy, tick } from 'svelte';
   import type { App } from '../lib/app.svelte';
+  import { shrinkPhoto } from '../lib/photo';
   import { MAX_FILE_BYTES, MAX_FILES, MAX_VOICE_MS, sizeText, type AttachmentKind } from '../lib/attach';
   import { formHolds } from '../lib/capture';
   import type { Translate, TextKey } from '../lib/i18n';
@@ -59,8 +61,12 @@
 
   function picked(event: Event): void {
     const input = event.currentTarget as HTMLInputElement;
-    for (const file of input.files ?? []) add(file, 'photo');
+    const files = [...(input.files ?? [])];
     input.value = '';
+    // Scaled down first (photo.ts); the photos go in one after the other, in the order they were picked.
+    void (async () => {
+      for (const file of files) add(await shrinkPhoto(file), 'photo');
+    })();
   }
 
   async function startVoice(): Promise<void> {
@@ -83,6 +89,7 @@
     ticker = setInterval(() => {
       elapsed = Date.now() - startedAt;
       if (elapsed >= MAX_VOICE_MS) void stopVoice();
+    // A quarter of a second: the clock shows whole seconds, and this keeps a late tick within a quarter of one.
     }, 250);
   }
 
@@ -128,6 +135,12 @@
     app.discardForm();
   }
 
+  // What a send found wrong is said at the field it belongs to, and the focus goes to the first one.
+  let formEl: HTMLFormElement | undefined = $state();
+  const titleProblems = $derived(app.problems.filter((p) => p.startsWith('title')));
+  const contextProblems = $derived(app.problems.filter((p) => p.startsWith('context')));
+  const otherProblems = $derived(app.problems.filter((p) => !p.startsWith('title') && !p.startsWith('context')));
+
   async function submit(event: SubmitEvent): Promise<void> {
     event.preventDefault();
     if (recording) await stopVoice();
@@ -135,6 +148,11 @@
       { area: form.area, title: form.title, context: form.context },
       form.files.map((f) => ({ blob: f.blob, kind: f.kind })),
     );
+    if (!ok) {
+      await tick();
+      focusFirstInvalid(formEl);
+      return;
+    }
     if (ok) {
       const area = form.area;
       app.discardForm();
@@ -150,7 +168,7 @@
 {#if !app.may('create')}
   <p class="muted" data-testid="no-create">{t('rights.create_none', { level: app.level ?? '' })}</p>
 {:else}
-<form onsubmit={submit} oninput={typed} novalidate>
+<form onsubmit={submit} oninput={typed} novalidate aria-busy={app.busy} bind:this={formEl}>
   {#if form.fromShare}
     <p class="muted" data-testid="from-share">{t('capture.shared')}</p>
   {/if}
@@ -158,7 +176,12 @@
     <p class="bad">{t('capture.no_area')}</p>
   {/if}
   <label for="cap-title">{t('capture.title')}</label>
-  <input id="cap-title" type="text" maxlength="400" enterkeyhint="next" bind:value={form.title} aria-invalid={app.problems.some((p) => p.startsWith('title')) || undefined} />
+  <input id="cap-title" type="text" maxlength="400" enterkeyhint="next" bind:value={form.title} aria-invalid={titleProblems.length > 0 || undefined} aria-describedby={titleProblems.length > 0 ? 'cap-title-problems' : undefined} />
+  {#if titleProblems.length > 0}
+    <ul class="bad" id="cap-title-problems" role="alert" data-testid="problems">
+      {#each titleProblems as problem (problem)}<li>{t(`capture.problem.${problem}` as TextKey)}</li>{/each}
+    </ul>
+  {/if}
 
   <label for="cap-area">{t('capture.area')}</label>
   <select id="cap-area" bind:value={form.area}>
@@ -168,7 +191,12 @@
   </select>
 
   <label for="cap-context">{t('capture.context')}</label>
-  <textarea id="cap-context" maxlength="4000" bind:value={form.context}></textarea>
+  <textarea id="cap-context" maxlength="4000" bind:value={form.context} aria-invalid={contextProblems.length > 0 || undefined} aria-describedby={contextProblems.length > 0 ? 'cap-context-problems' : undefined}></textarea>
+  {#if contextProblems.length > 0}
+    <ul class="bad" id="cap-context-problems" role="alert" data-testid="problems-context">
+      {#each contextProblems as problem (problem)}<li>{t(`capture.problem.${problem}` as TextKey)}</li>{/each}
+    </ul>
+  {/if}
 
   {#if !app.may('change')}
   <p class="muted" data-testid="no-files">{t('rights.files_none', { level: app.level ?? '' })}</p>
@@ -187,7 +215,7 @@
     />
     <button type="button" onclick={() => photoInput?.click()} disabled={form.files.length >= MAX_FILES || recording !== null}>{t('capture.photo')}</button>
     {#if recording}
-      <button type="button" class="recording" onclick={() => void stopVoice()} data-testid="voice-stop">
+      <button type="button" class="recording num" onclick={() => void stopVoice()} data-testid="voice-stop">
         ● {t('capture.voice_stop', { time: clock(elapsed) })}
       </button>
     {:else}
@@ -211,7 +239,7 @@
       {#each form.files as file (file.id)}
         <li data-kind={file.kind}>
           {#if file.kind === 'photo'}
-            <img src={file.url} alt={t('capture.file_photo', { size: sizeText(file.blob.size) })} />
+            <img src={file.url} width="64" height="64" decoding="async" alt={t('capture.file_photo', { size: sizeText(file.blob.size) })} />
           {:else}
             <audio controls src={file.url}></audio>
           {/if}
@@ -222,9 +250,9 @@
     </ul>
   {/if}
 
-  {#if app.problems.length > 0}
-    <ul class="bad" role="alert" data-testid="problems">
-      {#each app.problems as problem (problem)}
+  {#if otherProblems.length > 0}
+    <ul class="bad" role="alert" data-testid="problems-other">
+      {#each otherProblems as problem (problem)}
         <li>{t(`capture.problem.${problem}` as TextKey)}</li>
       {/each}
     </ul>

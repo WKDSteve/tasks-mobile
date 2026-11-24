@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { dateTimeText, dayText } from '../lib/format';
   // The start view: what the engine would take next, the tasks that wait for an answer, the tasks whose day has
   // come, and the engine's counts per status over the shown areas (`lib/today.ts`). Offline it shows the kept copy
   // and says how old it is.
@@ -12,7 +13,7 @@
   let { app, t }: { app: App; t: Translate } = $props();
 
   const today = $derived(todayOf(app.view, app.day));
-  const at = $derived(app.viewAt ? new Date(app.viewAt).toLocaleString() : null);
+  const at = $derived(app.viewAt ? dateTimeText(new Date(app.viewAt).getTime()) : null);
 
   /** A pick of the engine opens like a task of the list: the brief of the list when it is there. */
   function open(id: string, fallback: TaskBrief | null): void {
@@ -78,7 +79,7 @@
           <button class="row" data-id={item.task.id} onclick={() => void app.openTask(item.task)}>
             <span class="title untrusted">{markHidden(item.task.title)}</span>
             <span class="meta muted">
-              {item.task.area} · {t(item.why === 'due' ? 'today.due_day' : 'today.remind_day', { day: item.day })}
+              {item.task.area} · {t(item.why === 'due' ? 'today.due_day' : 'today.remind_day', { day: dayText(item.day) })}
             </span>
           </button>
         </li>

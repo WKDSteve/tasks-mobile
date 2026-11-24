@@ -116,3 +116,55 @@ dialog::backdrop {
   overflow: hidden;
   overscroll-behavior: contain;
 }
+
+/* A finger on the page: no double-tap zoom wait on a control, and a tap that shows (a soft accent, not the browser's grey). */
+button,
+a,
+summary,
+select,
+input,
+textarea,
+label {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: color-mix(in srgb, var(--accent) 25%, transparent);
+}
+
+/* Headings do not leave a single word on the last line. A browser that does not know it breaks the line as ever. */
+h1,
+h2,
+h3 {
+  text-wrap: balance;
+}
+
+/* Numbers that change or are compared keep one width: the recording clock, the counts, the badge of the queue. */
+.num,
+dd,
+.badge,
+.when,
+.at {
+  font-variant-numeric: tabular-nums;
+}
+
+/* What comes from the vault (an area, a place, a name of a level) may hold a word as long as the line: it breaks
+   rather than widen the page, and a cell of a row may shrink below that word. */
+main,
+dialog {
+  overflow-wrap: anywhere;
+}
+.row > *,
+.line > * {
+  min-width: 0;
+}
+
+/* A summary and a link on a line of their own are controls: at least 44 px high, and the link as wide as its text. */
+summary {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  cursor: pointer;
+}
+a.hit {
+  display: inline-block;
+  min-height: 44px;
+  padding-block: 10px;
+}

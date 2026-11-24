@@ -25,7 +25,12 @@ test('lists the learning paths, opens one and ticks its points', async ({ page }
   const rustlings = page.locator('[data-point="rustlings"]');
   await rustlings.getByRole('button', { name: 'Looked at' }).click();
   const save = rustlings.getByRole('button', { name: 'Save' });
-  await expect(save).toBeDisabled();
+  // Sent without a reason: said at the field, the focus there, the point not changed, the button still usable.
+  await save.click();
+  await expect(rustlings.getByTestId('point-reason')).toHaveAttribute('aria-invalid', 'true');
+  await expect(rustlings.getByTestId('point-reason')).toBeFocused();
+  await expect(rustlings).not.toHaveAttribute('data-state', 'seen');
+  await expect(save).toBeEnabled();
   await rustlings.getByTestId('point-reason').fill('kenne ich schon');
   await save.click();
   await expect(rustlings).toHaveAttribute('data-state', 'seen');

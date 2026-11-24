@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { weekdayText } from '../lib/format';
   // The coming meetings of the areas this phone shows (the hub cut them, MOB-02), by day, read with the list. A tap
   // opens one. `limit`: Today shows the first few and a way to all of them.
   import { markHidden } from 'appkit-ui/text';
@@ -19,7 +20,7 @@
     return out;
   });
   const dayName = (day: string) =>
-    day === app.day ? t('meetings.today') : new Date(`${day}T12:00:00`).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'numeric' });
+    day === app.day ? t('meetings.today') : weekdayText(day);
 </script>
 
 {#if limit === undefined}

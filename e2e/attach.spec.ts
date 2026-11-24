@@ -121,7 +121,7 @@ test('names the limits of the files and takes none beyond them', async ({ page }
   await open(page);
   await newCapture(page, 'Too much');
   await addPhoto(page, 'big.png', Buffer.alloc(25 * 1024 * 1024 + 1, 1));
-  await expect(page.getByTestId('file-problem')).toContainText('The file is too large (at most 25.0 MB).');
+  await expect(page.getByTestId('file-problem')).toContainText('The file is too large (at most 25 MB).');
   await expect(page.getByTestId('attachments')).toHaveCount(0);
   await page.getByTestId('photo-input').setInputFiles({ name: 'page.html', mimeType: 'text/html', buffer: Buffer.from('<b>x</b>') });
   await expect(page.getByTestId('file-problem')).toContainText('Photos and voice notes only.');

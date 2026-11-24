@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { dateTimeText } from '../lib/format';
   // Whether the phone speaks to the hub right now, and how old what it shows is (MUI-05); and that it shows a part of
   // the vault when areas stay on the PC (MUI-06).
   import type { App } from '../lib/app.svelte';
@@ -6,7 +7,7 @@
 
   let { app, t }: { app: App; t: Translate } = $props();
 
-  const at = $derived(app.viewAt ? new Date(app.viewAt).toLocaleString() : null);
+  const at = $derived(app.viewAt ? dateTimeText(new Date(app.viewAt).getTime()) : null);
 </script>
 
 <div class="bar" data-testid="connection" data-state={app.connection}>

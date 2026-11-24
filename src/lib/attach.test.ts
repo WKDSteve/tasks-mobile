@@ -39,9 +39,10 @@ describe('attachments', () => {
   });
 
   it('says sizes for people', () => {
-    expect(sizeText(100)).toBe('1 KB');
-    expect(sizeText(820 * 1024)).toBe('820 KB');
-    expect(sizeText(3.4 * 1024 * 1024)).toBe('3.4 MB');
+    expect(sizeText(100, 'en').replace(/\s/g, ' ')).toBe('1 kB');
+    expect(sizeText(820 * 1024, 'en').replace(/\s/g, ' ')).toBe('820 kB');
+    expect(sizeText(3.4 * 1024 * 1024, 'de').replace(/\s/g, ' ')).toBe('3,4 MB');
+    expect(sizeText(3.4 * 1024 * 1024, 'en').replace(/\s/g, ' ')).toBe('3.4 MB');
   });
 });
 

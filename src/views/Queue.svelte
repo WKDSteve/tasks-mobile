@@ -51,7 +51,7 @@
   <ul data-testid="queue">
     {#each app.pending as item (item.clientOpId)}
       <li data-state={item.state}>
-        <p class="what untrusted">{what(item)}</p>
+        <p class="what untrusted" translate="no">{what(item)}</p>
         <p class:bad={item.state === 'conflict' || item.state === 'refused' || item.state === 'unknown'}>
           {t(`queue.state.${item.state}` as TextKey)}{#if item.state !== 'conflict' && reason(t, item.message, item.code)}: <span class="untrusted">{markHidden(reason(t, item.message, item.code))}</span>{/if}
         </p>

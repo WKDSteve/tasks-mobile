@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { dayText } from '../lib/format';
   // The open tasks of the shown areas, in the order the engine sent them; filtered by area and words here (a filter
   // of what is shown, no rule of the tasks).
   import { markHidden } from 'appkit-ui/text';
@@ -37,7 +38,7 @@
         <button class="row" onclick={() => void app.openTask(task)} data-id={task.id}>
           <span class="title untrusted">{markHidden(task.title)}</span>
           <span class="meta muted">
-            {task.area}{#if task.status} · {t(`status.${task.status}` as TextKey)}{/if}{#if task.prio !== null} · P{task.prio}{/if}{#if task.due} · {t('list.due', { day: task.due })}{/if}{#if task.openQuestions > 0} · {t('list.questions', { n: task.openQuestions })}{/if}
+            {task.area}{#if task.status} · {t(`status.${task.status}` as TextKey)}{/if}{#if task.prio !== null} · P{task.prio}{/if}{#if task.due} · {t('list.due', { day: dayText(task.due) })}{/if}{#if task.openQuestions > 0} · {t('list.questions', { n: task.openQuestions })}{/if}
           </span>
         </button>
       </li>

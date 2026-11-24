@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { tick as settled } from 'svelte';
+  import { pointReason } from '../lib/typed.svelte';
   // One learning path: its points as a tree, each with its state and, for a point with points below it, the state of
   // its leaves (the engine's, MOB-05). A leaf is ticked here: learned at once; seen or dropped with a reason (the engine
   // takes them only with one); a closed one opened again. Each tick is one `node_set` on the version seen (MOB-08),
@@ -15,19 +17,25 @@
   const points = $derived(app.pathView?.points ?? []);
   const canTick = $derived(app.may('change'));
   /** The point a reason is asked for, and the state it is to get. */
-  let asking = $state<{ key: string; state: 'seen' | 'dropped' } | null>(null);
-  let reason = $state('');
+  // Kept outside this screen (typed.svelte.ts): left for another screen and back, the reason is still typed.
+  const asking = $derived(pointReason.state !== null && pointReason.path === (path?.id ?? '') ? { key: pointReason.key, state: pointReason.state } : null);
+  let attempted = $state(false);
+  let reasonField: HTMLInputElement | undefined = $state();
+  const reasonMissing = $derived(attempted && pointReason.text.trim() === '');
 
   const CLOSED = new Set(['learned', 'seen', 'dropped']);
   const shownState = (p: PathPoint) => (p.children > 0 ? p.derived : p.state);
 
   function ask(p: PathPoint, state: 'seen' | 'dropped'): void {
-    asking = { key: p.key, state };
-    reason = '';
+    pointReason.path = path?.id ?? '';
+    pointReason.key = p.key;
+    pointReason.state = state;
+    pointReason.text = '';
+    attempted = false;
   }
 
   async function tick(p: PathPoint, state: PointState, why?: string): Promise<void> {
-    asking = null;
+    pointReason.state = null;
     await app.tickPoint(p, state, why);
   }
 </script>
@@ -56,13 +64,13 @@
           <div class="line">
             <span class="mark" aria-hidden="true">{CLOSED.has(state) ? '✓' : '○'}</span>
             <span class="label untrusted">
-              {#if p.link}<a href={p.link} target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer">{markHidden(p.label)}</a>{:else}{markHidden(p.label)}{/if}
+              {#if p.link}<a class="hit" href={p.link} target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer">{markHidden(p.label)}</a>{:else}{markHidden(p.label)}{/if}
             </span>
             <span class="state muted">{t(`point.${state}` as TextKey)}</span>
           </div>
           {#if p.note}<p class="note untrusted muted">{markHidden(p.note)}</p>{/if}
           {#if p.reason}<p class="note untrusted muted">{t('point.reason')}: {markHidden(p.reason)}</p>{/if}
-          {#if p.promoted}<p class="note muted">{t('point.promoted', { id: p.promoted })}</p>{/if}
+          {#if p.promoted}<p class="note muted" translate="no">{t('point.promoted', { id: p.promoted })}</p>{/if}
           {#if canTick && p.children === 0 && !p.promoted}
             <div class="actions">
               {#if CLOSED.has(p.state)}
@@ -75,14 +83,24 @@
             </div>
             {#if asking?.key === p.key}
               {@const to = asking.state}
-              <form class="reason" onsubmit={(e) => { e.preventDefault(); if (reason.trim()) void tick(p, to, reason); }}>
+              <form class="reason" onsubmit={async (e) => {
+                e.preventDefault();
+                if (pointReason.text.trim() === '') {
+                  attempted = true;
+                  await settled();
+                  reasonField?.focus();
+                  return;
+                }
+                void tick(p, to, pointReason.text);
+              }}>
                 <label>
                   <span>{t('point.reason_for', { state: t(`point.${to}` as TextKey) })}</span>
-                  <input bind:value={reason} maxlength="500" data-testid="point-reason" />
+                  <input bind:this={reasonField} bind:value={pointReason.text} maxlength="500" data-testid="point-reason" aria-invalid={reasonMissing ? 'true' : undefined} aria-describedby={reasonMissing ? 'point-reason-error' : undefined} />
                 </label>
+                {#if reasonMissing}<p class="bad" id="point-reason-error">{t('form.missing')}</p>{/if}
                 <div class="actions">
-                  <button class="primary" type="submit" disabled={app.busy || reason.trim() === ''}>{t('point.save')}</button>
-                  <button type="button" onclick={() => (asking = null)}>{t('task.cancel')}</button>
+                  <button class="primary" type="submit" disabled={app.busy}>{t('point.save')}</button>
+                  <button type="button" onclick={() => (pointReason.state = null)}>{t('task.cancel')}</button>
                 </div>
               </form>
             {/if}

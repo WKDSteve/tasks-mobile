@@ -12,8 +12,10 @@ pnpm install --frozen-lockfile
 pnpm check && pnpm test && pnpm e2e
 python tools/check-control-chars.py
 node --check public/sw.js
+node tools/check-bundle-size.mjs dist   # nach pnpm build: html, css und Skripte des Starts in ihrem Budget (gemessen + 10 %)
 ```
 
+- Das Größenbudget des Starts steht in `tools/check-bundle-size.mjs` (`--measure` zeigt die Größen); wer es hebt, nennt den Grund im Commit.
 - `pnpm e2e` baut beide Varianten (`dist/` für den Hub, `dist-fake/` mit synthetischem Vault) und testet die
   Fake-Seite in Chrome (Handy-Viewport) unter der CSP aus `tools/csp.mjs`. Jede Konsolen-Meldung (Fehler oder
   Warnung) lässt einen Test scheitern.

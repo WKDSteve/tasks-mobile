@@ -3,9 +3,15 @@
 // answered from here and never stored, and nothing outside the scope of this worker is touched. The copy of the vault
 // is the page's own (IndexedDB, only the classes that may stay on the phone).
 //
-// Network first: a newer page is taken as soon as the hub serves it; the kept one is only the fallback offline.
+// Network first: a newer page is taken as soon as the hub serves it; the kept one is only the fallback offline. The
+// exception is a file under `assets/` with its hash in the name (`index-D3f9kQ2x.js`): the name changes with the
+// content, so a kept copy is never stale, and it is taken from the cache first (the page then starts without waiting
+// for the tunnel to bring its scripts again).
 
 const CACHE = 'tasks-mobile-shell-v1';
+
+/** A built file with the hash of its content in the name: `assets/<name>-<hash>.<ext>` (the bundler's default). */
+const HASHED = /\/assets\/[^/]+-[A-Za-z0-9_-]{8}\.[a-z0-9]+$/;
 
 /** @param {URL} url */
 function isShell(url) {
@@ -116,6 +122,22 @@ self.addEventListener('fetch', (event) => {
   if (!isShell(url)) return;
   // The share target opens the page with the shared text in the query: the page is the same, the query is not kept.
   const key = new Request(url.origin + url.pathname);
+  if (HASHED.test(url.pathname)) {
+    event.respondWith(
+      caches.match(key).then(
+        (hit) =>
+          hit ??
+          fetch(request).then((response) => {
+            if (response.ok && response.type === 'basic') {
+              const copy = response.clone();
+              caches.open(CACHE).then((cache) => cache.put(key, copy));
+            }
+            return response;
+          }),
+      ),
+    );
+    return;
+  }
   event.respondWith(
     fetch(request, { cache: 'no-store' })
       .then((response) => {

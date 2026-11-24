@@ -113,3 +113,59 @@ describe('the service worker shows a notice', () => {
     expect(readFileSync('public/sw.js', 'utf8')).toContain(`const KINDS = [${PUSH_KINDS.map((k) => `'${k}'`).join(', ')}];`);
   });
 });
+
+/** The worker with a cache and a network of its own, to see what a `fetch` event answers from where. */
+function shellWorker() {
+  const listeners = new Map<string, (event: unknown) => void>();
+  const kept = new Map<string, Response>();
+  const network: string[] = [];
+  const caches = {
+    match: async (req: Request) => kept.get(req.url)?.clone(),
+    open: async () => ({
+      put: async (req: Request, res: Response) => void kept.set(req.url, res),
+    }),
+  };
+  const fetched = async (req: Request) => {
+    network.push(new URL(req.url).pathname);
+    const response = new Response('from the network');
+    // A made-up response has the type `default`; the worker keeps only what came from its own origin (`basic`).
+    Object.defineProperty(response, 'type', { value: 'basic' });
+    return response;
+  };
+  const self = {
+    navigator: { language: 'de' },
+    registration: { scope: 'https://pc.example.ts.net/m/' },
+    addEventListener: (type: string, run: (event: unknown) => void) => listeners.set(type, run),
+    skipWaiting: () => {},
+  };
+  runInNewContext(readFileSync('public/sw.js', 'utf8'), { self, URL, caches, fetch: fetched, Request, Response });
+  const get = async (path: string): Promise<{ text: string }> => {
+    const request = new Request(`https://pc.example.ts.net${path}`);
+    let answer: Promise<Response> | undefined;
+    listeners.get('fetch')!({ request, respondWith: (p: Promise<Response>) => (answer = p) });
+    const response = await answer!;
+    // The copy is stored after the answer went out: let it settle.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    return { text: await response.text() };
+  };
+  return { get, network, kept };
+}
+
+describe('the service worker answers files of the page', () => {
+  it('takes a file with a hash in its name from the cache once it is kept, and asks the network only the first time', async () => {
+    const w = shellWorker();
+    await w.get('/m/assets/index-D3f9kQ2x.js');
+    await w.get('/m/assets/index-D3f9kQ2x.js');
+    await w.get('/m/assets/index-D3f9kQ2x.js');
+    expect(w.network).toEqual(['/m/assets/index-D3f9kQ2x.js']);
+  });
+
+  it('asks the network first for the page and for a file without a hash, as before', async () => {
+    const w = shellWorker();
+    await w.get('/m/');
+    await w.get('/m/');
+    await w.get('/m/icon-192.png');
+    await w.get('/m/icon-192.png');
+    expect(w.network).toEqual(['/m/', '/m/', '/m/icon-192.png', '/m/icon-192.png']);
+  });
+});

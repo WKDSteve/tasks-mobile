@@ -75,7 +75,10 @@ export async function startRecording(deps: RecorderDeps): Promise<Recording> {
   };
 }
 
-/** `m:ss` of a duration. */
+/**
+ * `m:ss` of a duration on the recording clock. Written by hand on purpose: it is a stopwatch, not text (it must read
+ * `0:07`, in every language), and `Intl.DurationFormat`, which would write it, is not widely available yet.
+ */
 export function clock(ms: number): string {
   const s = Math.max(0, Math.floor(ms / 1000));
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;

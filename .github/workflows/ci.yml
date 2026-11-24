@@ -52,6 +52,8 @@ jobs:
         run: pnpm test
       - name: Both builds, then the page in Chrome under the hub's CSP
         run: pnpm e2e
+      - name: The start of the page stays within its size budget
+        run: node tools/check-bundle-size.mjs dist
       # Informative only (never red): legacy web-platform patterns against the target in .mwgrc. The scanner is an
       # exact devDependency, so the quarantine of pnpm-workspace.yaml applies to it; no telemetry.
       - name: Legacy web patterns (informative)

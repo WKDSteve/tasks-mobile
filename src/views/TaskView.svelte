@@ -74,8 +74,8 @@
         {#if app.preview.already}
           <p>{t('task.done_already')}</p>
         {/if}
-        {#if app.preview.closesPlan}<p>{t('task.done_closes_plan', { plan: app.preview.closesPlan })}</p>{/if}
-        {#if app.preview.closesProject}<p>{t('task.done_closes_project', { project: app.preview.closesProject })}</p>{/if}
+        {#if app.preview.closesPlan}<p translate="no">{t('task.done_closes_plan', { plan: app.preview.closesPlan })}</p>{/if}
+        {#if app.preview.closesProject}<p translate="no">{t('task.done_closes_project', { project: app.preview.closesProject })}</p>{/if}
         {#if app.preview.freed.length > 0}<p>{t('task.done_frees', { n: app.preview.freed.length })}</p>{/if}
         {#if app.preview.endsRoutine}
           <!-- The last round of a ladder: no next round, the routine ends with this finish. -->

@@ -1,15 +1,18 @@
 <script lang="ts">
+  import { dayText } from '../lib/format';
   // One meeting: its time and place, Join when the hub let the address out (MOB-02), its agenda, its participants when
   // the hub gave them (a public area, or an internal one the PC released), its minutes and its follow-ups, and one
   // field for a line of the minutes: a note, a task, a decision or a question. A photo (the camera) or a voice note (the
   // microphone, asked for only on the button, AND-01) goes into the minutes as well: the file waits on the phone, goes
   // to the meeting, and its line follows. Each write goes through the queue; the minutes and the ticks show it once the
   // hub answered (MOB-07). All text is shown as text, hidden characters made visible (MSEC-05).
-  import { onDestroy } from 'svelte';
+  import { onDestroy, tick } from 'svelte';
   import { markHidden } from 'appkit-ui/text';
   import type { App } from '../lib/app.svelte';
   import { MAX_FILE_BYTES, MAX_VOICE_MS, sizeText } from '../lib/attach';
   import type { Translate, TextKey } from '../lib/i18n';
+  import { shrinkPhoto } from '../lib/photo';
+  import { lineFor, setLine } from '../lib/typed.svelte';
   import { minuteShown } from '../lib/parse';
   import { clock, startRecording, type Recording } from '../lib/recorder';
   import { CAPTURE_KINDS, type CaptureKind } from '../lib/types';
@@ -18,7 +21,18 @@
 
   const meeting = $derived(app.meetingView?.meeting ?? app.openedMeeting);
   const canWrite = $derived(app.may('change'));
-  let line = $state('');
+  // The line typed for the minutes outlives this screen (typed.svelte.ts); sent empty, it says so at the field.
+  const line = {
+    get value(): string {
+      return lineFor(meeting?.id ?? '');
+    },
+    set value(text: string) {
+      setLine(meeting?.id ?? '', text);
+    },
+  };
+  let attempted = $state(false);
+  let lineField: HTMLInputElement | undefined = $state();
+  const lineMissing = $derived(attempted && line.value.trim() === '');
   let photoInput: HTMLInputElement | undefined = $state();
   let recording = $state<Recording | null>(null);
   let startedAt = $state(0);
@@ -27,14 +41,21 @@
   let micProblem = $state<string | null>(null);
 
   async function add(kind: CaptureKind): Promise<void> {
-    if (await app.captureLine(kind, line)) line = '';
+    if (line.value.trim() === '') {
+      attempted = true;
+      await tick();
+      lineField?.focus();
+      return;
+    }
+    attempted = false;
+    if (await app.captureLine(kind, line.value)) line.value = '';
   }
 
   function picked(event: Event): void {
     const input = event.currentTarget as HTMLInputElement;
     const file = input.files?.[0];
     input.value = '';
-    if (file) void app.captureMedia({ blob: file, kind: 'photo' });
+    if (file) void shrinkPhoto(file).then((blob) => app.captureMedia({ blob, kind: 'photo' }));
   }
 
   async function startVoice(): Promise<void> {
@@ -53,6 +74,7 @@
     ticker = setInterval(() => {
       elapsed = Date.now() - startedAt;
       if (elapsed >= MAX_VOICE_MS) void stopVoice();
+    // A quarter of a second: the clock shows whole seconds, and this keeps a late tick within a quarter of one.
     }, 250);
   }
 
@@ -95,7 +117,7 @@
 {#if meeting}
   <h2 class="untrusted" data-testid="meeting-title">{#if meeting.icon}<span aria-hidden="true">{meeting.icon} </span>{/if}{markHidden(meeting.title)}</h2>
   <p class="muted">
-    {meeting.date}{#if meeting.time} · {meeting.time}{#if meeting.end}–{meeting.end}{/if}{/if}{#if meeting.location} · {markHidden(meeting.location)}{/if}
+    {dayText(meeting.date)}{#if meeting.time} · {meeting.time}{#if meeting.end}–{meeting.end}{/if}{/if}{#if meeting.location} · {markHidden(meeting.location)}{/if}
     {#if meeting.status === 'cancelled'} · {t('meeting.cancelled')}{/if}
   </p>
   {#if meeting.online}
@@ -156,11 +178,12 @@
       <form class="capture" onsubmit={(e) => { e.preventDefault(); void add('text'); }}>
         <label>
           <span>{t('meeting.line')}</span>
-          <input bind:value={line} maxlength="2000" data-testid="minutes-line" />
+          <input bind:this={lineField} bind:value={line.value} maxlength="2000" data-testid="minutes-line" aria-invalid={lineMissing ? 'true' : undefined} aria-describedby={lineMissing ? 'minutes-line-error' : undefined} />
         </label>
+        {#if lineMissing}<p class="bad" id="minutes-line-error">{t('form.missing')}</p>{/if}
         <div class="actions">
           {#each CAPTURE_KINDS as kind (kind)}
-            <button type="button" class:primary={kind === 'text'} disabled={app.busy || line.trim() === ''} onclick={() => void add(kind)}
+            <button type="button" class:primary={kind === 'text'} disabled={app.busy} onclick={() => void add(kind)}
               >{t(`meeting.kind.${kind}` as TextKey)}</button
             >
           {/each}
@@ -182,7 +205,7 @@
           >{t('capture.photo')}</button
         >
         {#if recording}
-          <button type="button" class="recording" onclick={() => void stopVoice()} data-testid="meeting-voice-stop">
+          <button type="button" class="recording num" onclick={() => void stopVoice()} data-testid="meeting-voice-stop">
             ● {t('capture.voice_stop', { time: clock(elapsed) })}
           </button>
         {:else}
@@ -204,7 +227,7 @@
     {#if app.meetingView.followups.length > 0}
       <h3>{t('meeting.followups')}</h3>
       <ul class="plain">
-        {#each app.meetingView.followups as f (f.n)}<li class="untrusted">{f.ticked ? '✓' : '○'} {markHidden(f.text)}{#if f.task} → {f.task}{/if}</li>{/each}
+        {#each app.meetingView.followups as f (f.n)}<li class="untrusted">{f.ticked ? '✓' : '○'} {markHidden(f.text)}{#if f.task} → <span translate="no">{f.task}</span>{/if}</li>{/each}
       </ul>
     {/if}
   {/if}

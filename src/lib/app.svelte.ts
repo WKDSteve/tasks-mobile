@@ -81,7 +81,11 @@ export interface DeviceAccess {
   canConfirm(): Promise<boolean>;
 }
 
-/** How long the page waits between two looks at a run of the test sheets. */
+/**
+ * How long the page waits between two looks at a run of the test sheets (a sheet takes minutes, the hub has no event
+ * stream for a run): often enough that the verdict shows soon after the end, rarely enough to spare the battery. The look
+ * waits while the page is hidden and is taken up again on the return (`resumeRun`).
+ */
 export const RUN_POLL_MS = 3_000;
 
 /** The name a phone is paired under when the person gives none. */
@@ -327,6 +331,7 @@ export class App {
    * (WEB-08): a call during a run makes one more run after it, never a second one beside it.
    */
   refresh(): Promise<void> {
+    this.resumeRun();
     if (this.running) {
       this.again = true;
       return this.running;
@@ -991,6 +996,15 @@ export class App {
   }
 
   private runHandle: unknown = null;
+
+  /**
+   * Back in front (or online again) with the run of the opened task still running: look at once and follow it again.
+   * The follow-up timer gives up for a page that is hidden and sets nothing new, so only a return starts it anew.
+   */
+  private resumeRun(): void {
+    if (this.screen !== 'task' || this.runHandle !== null || !this.testing?.run?.running) return;
+    void this.refreshRun().then(() => this.followRun());
+  }
 
   /** While the run of the opened task runs and the page is in front, look again now and then. */
   private followRun(): void {

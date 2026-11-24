@@ -93,11 +93,7 @@ export function isMeetingAsset(kind: 'photo' | 'audio', asset: unknown): asset i
   return /^[A-Za-z0-9_][A-Za-z0-9._-]{0,119}$/.test(name) && !name.includes('..');
 }
 
-/** A size for people: `820 KB`, `3.4 MB`. */
-export function sizeText(bytes: number): string {
-  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
+export { sizeText } from './format';
 
 /** An `AttachmentRef` read back from the phone's storage, checked (MSEC-13); `null` when it is not one. */
 export function restoreRef(value: unknown): AttachmentRef | null {

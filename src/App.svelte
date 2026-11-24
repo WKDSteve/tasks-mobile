@@ -39,7 +39,7 @@
 
 <header>
   <div class="top">
-    <h1>{t('app.title')}</h1>
+    <h1 translate="no">{t('app.title')}</h1>
     {#if app.kind === 'fake'}
       <span class="fake" data-testid="fake-badge">{t('app.fake')}</span>
     {/if}
@@ -143,7 +143,7 @@
     display: grid;
     grid-template-columns: repeat(5, 1fr);
     gap: 6px;
-    padding: 8px 8px calc(8px + env(safe-area-inset-bottom));
+    padding: 8px max(8px, env(safe-area-inset-right)) calc(8px + env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left));
     background: var(--surface);
     border-top: 1px solid var(--line);
   }
