@@ -18,9 +18,10 @@ Done in tasks-desktop (its `mobile.lock`, `tools/build-mobile.py`, `crates/tasks
   are in `tools/csp.mjs`. A hub without the microphone still takes photos; recording then says why it cannot.
 - `manifest.webmanifest` as `application/manifest+json`, `sw.js` as `text/javascript`. The worker's scope is `/m/`;
   it does not need `Service-Worker-Allowed`.
-- Cache and compression: the hub answers every file of the page, hashed ones too, with `Cache-Control: no-store` and
-  without `Content-Encoding` (checked in tasks-desktop, `docs/PERFORMANCE.md`: the hub is a local program, loopback
-  needs neither). Over the tunnel this means the browser's own cache keeps nothing, so the service worker does: a file
+- Cache and compression: the hub answers every file of the page, hashed ones too, with `Cache-Control: no-store`
+  (tasks-desktop, `docs/PERFORMANCE.md`); a text file of the page goes out as its gzip version, made when the hub is
+  built, to a request that accepts gzip (`Content-Encoding: gzip`, `Vary: Accept-Encoding`; an older hub sends
+  the plain file). Over the tunnel this means the browser's own cache keeps nothing, so the service worker does: a file
   under `assets/` with the hash of its content in the name (`index-<hash>.js`) is taken from its cache first and asked
   of the network once (`public/sw.js`); the page, the manifest and the icons stay network first. The start of the page
   has a size budget (`tools/check-bundle-size.mjs`, 85 kB gzip), because nothing but the worker's copy spares the
