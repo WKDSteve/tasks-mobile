@@ -44,9 +44,11 @@ test('an exercise point opens its task as a sheet and is learned with its result
   await expect(sheet).not.toContainText('**');
   await expect(sheet).not.toContainText('`');
 
-  // The field has the focus, and a font of at least 16 px: Chrome on a phone does not zoom into it.
+  // The focus is on Close, not in the field: on a phone the keyboard would come up over the task to be read. The field
+  // has a font of at least 16 px: Chrome on a phone does not zoom into it.
+  await expect(sheet.getByRole('button', { name: 'Close' })).toBeFocused();
   const field = sheet.getByTestId('exercise-result');
-  await expect(field).toBeFocused();
+  await expect(field).not.toBeFocused();
   expect(parseFloat(await field.evaluate((el) => getComputedStyle(el).fontSize))).toBeGreaterThanOrEqual(16);
 
   // Sent without a result: said at the field, the focus there, nothing sent, the point still open.

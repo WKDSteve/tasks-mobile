@@ -74,14 +74,12 @@
   {#if field}
     <form onsubmit={(e) => void learn(e)}>
       <label for="exercise-result">{t('ex.ergebnis')}</label>
-      <!-- svelte-ignore a11y_autofocus -->
       <textarea
         id="exercise-result"
         bind:this={resultField}
         bind:value={pointResult.text}
         maxlength={RESULT_MAX}
         rows="3"
-        autofocus
         data-testid="exercise-result"
         aria-required={asksProof ? 'true' : undefined}
         aria-invalid={missing ? 'true' : undefined}
@@ -91,7 +89,10 @@
       {#if missing}<p class="bad" id="exercise-missing" role="alert">{t('ex.missing')}</p>{/if}
       <div class="actions">
         <button class="primary" type="submit" disabled={app.busy}>{t('ex.learned')}</button>
-        <button type="button" onclick={() => dialog?.close()}>{t('ex.close')}</button>
+        <!-- The focus starts here, not in the field: on a phone a focused field brings up the keyboard over the task
+             that is to be read first. The field gets it when the proof is missing. -->
+        <!-- svelte-ignore a11y_autofocus -->
+        <button type="button" autofocus onclick={() => dialog?.close()}>{t('ex.close')}</button>
       </div>
     </form>
   {:else}
