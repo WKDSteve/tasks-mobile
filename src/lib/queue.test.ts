@@ -184,6 +184,15 @@ describe('WriteQueue', () => {
     expect(q.items).toHaveLength(1);
   });
 
+  it('keeps the result of an exercise point with its tick, and only as text of a bounded length', () => {
+    const item = (op: unknown) => ({ clientOpId: 'id-00000078', op, scope: 'garden', label: 'R', queuedAt: '2026-01-01T00:00:00Z', state: 'waiting' });
+    const tick = { op: 'node_set', id: 'garden/rust', point: 'borrow', state: 'learned', if_match: 'e1' };
+    expect(restore([item({ ...tick, result: 'https://example.org/commit/1' })], null)).toHaveLength(1);
+    expect(restore([item({ ...tick, result: 'x'.repeat(2000) })], null)).toHaveLength(1);
+    expect(restore([item({ ...tick, result: 'x'.repeat(2001) })], null)).toEqual([]);
+    expect(restore([item({ ...tick, result: 42 })], null)).toEqual([]);
+  });
+
   it('never sends the files of a new task with it: they follow as uploads', async () => {
     const files = memoryFileStore();
     await files.put('file-0001', new Blob(['abc']));

@@ -177,6 +177,75 @@ describe('App on the synthetic vault', () => {
     expect(app.detail?.task.status).toBe('blocked');
   });
 
+  it('learns an exercise point with its result in one node_set, which the engine writes first (node_result)', async () => {
+    const fake = new FakeSource();
+    const app = new App(deps(fake));
+    await app.start(null);
+    expect(app.hasResults).toBe(true);
+    await app.openPaths();
+    await app.openPath(app.paths![0]!);
+    const borrow = app.pathView!.points.find((p) => p.key === 'borrow')!;
+    expect(await app.tickPoint(borrow, 'learned', undefined, '  https://example.org/commit/1  ')).toBe(true);
+    expect(fake.writes[0]?.op).toEqual({
+      op: 'node_set',
+      id: 'garden/lernpfad-rust',
+      point: 'borrow',
+      state: 'learned',
+      result: 'https://example.org/commit/1',
+      if_match: 'e1',
+    });
+    const now = app.pathView!.points.find((p) => p.key === 'borrow')!;
+    expect(now.state).toBe('learned');
+    expect(now.note).toContain('**Ergebnis:** https://example.org/commit/1');
+  });
+
+  it('a hub whose engine does not write results gets no result: the field is not offered and nothing is sent with it', async () => {
+    const fake = new FakeSource();
+    fake.nodeResult = false;
+    const app = new App(deps(fake));
+    await app.start(null);
+    expect(app.hasResults).toBe(false);
+    await app.openPaths();
+    await app.openPath(app.paths![0]!);
+    const borrow = app.pathView!.points.find((p) => p.key === 'borrow')!;
+    await app.tickPoint(borrow, 'learned', undefined, 'a proof');
+    expect(fake.writes[0]?.op).not.toHaveProperty('result');
+    // A hub that does not say what its engine can: no field either.
+    app.capabilities = null;
+    expect(app.hasResults).toBe(false);
+  });
+
+  it('keeps the result of an exercise point offline in the queue and sends it with its tick later (MOB-07, MOB-08)', async () => {
+    const fake = new FakeSource();
+    const app = new App(deps(fake));
+    await app.start(null);
+    await app.openPaths();
+    await app.openPath(app.paths![0]!);
+    const borrow = app.pathView!.points.find((p) => p.key === 'borrow')!;
+    fake.offline = true;
+    await app.refresh();
+    expect(await app.tickPoint(borrow, 'learned', undefined, 'cargo test grün')).toBe(true);
+    expect(app.pending.map((p) => [p.state, p.op.op === 'node_set' ? p.op.result : null])).toEqual([['waiting', 'cargo test grün']]);
+    expect(fake.writes).toEqual([]);
+    fake.offline = false;
+    await app.refresh();
+    expect(app.pending).toEqual([]);
+    expect(fake.writes[0]?.op).toMatchObject({ point: 'borrow', state: 'learned', result: 'cargo test grün' });
+  });
+
+  it('a tick of an exercise point without its proof is refused by the engine and changes nothing', async () => {
+    const fake = new FakeSource();
+    const app = new App(deps(fake));
+    await app.start(null);
+    await app.openPaths();
+    await app.openPath(app.paths![0]!);
+    const borrow = app.pathView!.points.find((p) => p.key === 'borrow')!;
+    await app.tickPoint(borrow, 'learned', undefined, '   ');
+    expect(fake.writes[0]?.op).not.toHaveProperty('result');
+    expect(app.pending[0]).toMatchObject({ state: 'refused', code: 'invalid_argument' });
+    expect(app.pathView!.points.find((p) => p.key === 'borrow')?.state).toBe('open');
+  });
+
   it('lists the learning paths of the shown areas and ticks a point with the version it read', async () => {
     const fake = new FakeSource();
     const app = new App(deps(fake));
@@ -185,7 +254,7 @@ describe('App on the synthetic vault', () => {
     expect(app.screen).toBe('paths');
     expect(app.paths?.map((p) => p.id)).toEqual(['garden/lernpfad-rust']);
     await app.openPath(app.paths![0]!);
-    expect(app.pathView?.points.map((p) => p.key)).toEqual(['basics', 'book', 'rustlings', 'async']);
+    expect(app.pathView?.points.map((p) => p.key)).toEqual(['basics', 'book', 'rustlings', 'async', 'borrow']);
     const book = app.pathView!.points[1]!;
     await app.tickPoint(book, 'learned');
     expect(fake.writes[0]?.op).toEqual({ op: 'node_set', id: 'garden/lernpfad-rust', point: 'book', state: 'learned', if_match: 'e1' });
@@ -1519,7 +1588,8 @@ describe('App, the page Lernen', () => {
     expect(fake.writes).toHaveLength(2);
     await app.tickStep(safety, 'seen', 'nur gelesen', true);
     expect(fake.writes[2]?.op).toEqual({ op: 'node_set', id: 'garden/lernpfad-rust', point: 'async', state: 'seen', reason: 'nur gelesen', ack: true, if_match: 'e3' });
-    expect(app.learnSteps).toEqual([]);
+    // The exercise point is next.
+    expect(app.learnSteps?.map((s) => s.key)).toEqual(['borrow']);
   });
 
   it('a late answer of a period left since does not cover the one now chosen', async () => {

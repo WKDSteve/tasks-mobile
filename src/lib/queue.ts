@@ -21,6 +21,7 @@ import {
 } from 'appkit-ui/queue';
 import { isMeetingAsset, meetingAsset, memoryFileStore, restoreRef, type AttachmentRef, type FileStore } from './attach';
 import { isAreaName, isTaskId } from './parse';
+import { RESULT_MAX } from './exercise';
 import { AnswerLost, HubRefused, Unpaired, Unreachable, type DataSource } from './source';
 import type { Op, RoutineStarted } from './types';
 import { CAPTURE_KINDS, MEDIA_CAPTURE_KINDS, POINT_STATES, STATUSES, type MediaCaptureKind } from './types';
@@ -79,6 +80,8 @@ function validOp(value: unknown): value is QueueOp {
         /^[A-Za-z0-9._-]{1,64}$/.test(op['point']) &&
         (POINT_STATES as readonly unknown[]).includes(op['state']) &&
         (op['reason'] === undefined || (typeof op['reason'] === 'string' && op['reason'].length <= 500)) &&
+        // The proof of an exercise point, written with its state in the same call (capability `node_result`).
+        (op['result'] === undefined || (typeof op['result'] === 'string' && op['result'].length <= RESULT_MAX)) &&
         ifMatch
       );
     case 'meeting_capture': {

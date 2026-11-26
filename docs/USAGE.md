@@ -130,3 +130,22 @@ phone is paired and reaches the hub, the hub's list takes the place of the file.
 
 **Disconnect and delete the data** (at the bottom of **Waiting**, after a question) removes the device key, the kept list,
 what still waits, and the notifications.
+
+## 9. Learning paths and their exercises
+
+**Learn** shows the figures of your learning and the next step of each running path; **All paths** lists the paths of
+the released areas (read while the PC is reachable). A path opens as a tree: each point with its state, and a leaf can
+be marked **Learned**, **Looked at** or **Not needed** (the last two with a reason), or opened again. Every tick waits in
+**Waiting** while the PC is out of reach and is sent from there, like any other change.
+
+An exercise point (its note holds the block `**Aufgabe:**`, `**Fertig, wenn:**`, `**Nachweis:**`, `**Ergebnis:**`, see
+the [learning-path workflow](https://github.com/WKDSteve/tasks.nvim/blob/main/docs/LEARNING-PATH-WORKFLOW.md)) shows its
+title and a **Task** button instead of the raw note. The button opens a sheet with the task, "done when" and the proof
+asked for, each named, code shown as code. Below them is the field **Result**: **Save with the result as learned** writes
+your proof into the point's note and marks it learned in one step. A point that asks for a proof is learned only with
+it: **Learned** in the list opens the sheet, and an empty field says that the proof is missing. What you typed stays when
+the sheet is closed (Back) and opened again. The field is there only when the engine on the PC writes results; an older
+PC says to tick the point off there. A point already learned shows its result in the sheet.
+
+The next step on **Learn** carries no note: an exercise point that asks for a proof is learned in its path, not from the
+step.

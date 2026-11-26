@@ -47,7 +47,8 @@ test('the page Lernen: the period, the figures in words, a step ticked learned a
   await step.getByRole('button', { name: 'Yes, mark it' }).click();
   await step.getByLabel('Why only seen?').fill('nur gelesen');
   await step.getByRole('button', { name: 'Save' }).click();
-  await expect(page.getByTestId('learn-steps-none')).toBeVisible();
+  // the exercise point of the path is next (it is learned with its result in the path: exercise.spec.ts)
+  await expect(step).toContainText('Übung: Leihen');
   // the figures stand in one live region that stays
   await expect(mine.getByTestId('learn-live')).toHaveAttribute('aria-live', 'polite');
 

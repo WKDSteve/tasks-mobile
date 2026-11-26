@@ -11,7 +11,7 @@ test('lists the learning paths, opens one and ticks its points', async ({ page }
   const list = page.getByTestId('paths');
   await expect(list.getByRole('button')).toHaveCount(1);
   await expect(list).toContainText('Rust lernen');
-  await expect(list).toContainText('0 of 3 points');
+  await expect(list).toContainText('0 of 4 points');
   expect(await page.content()).not.toContain('SECRET-MARKER');
   await list.getByRole('button', { name: /Rust lernen/ }).click();
 

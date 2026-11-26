@@ -8,6 +8,7 @@
 
 import { areaClasses, contactDetail, contactList, deviceLevel, donePreview, hubHello, learnSeries, learnSteps, meetingDetail, meetingList, testingRun, testingSheets, opOutcome, pathDetail, pathList, taskDetail, vaultView } from './parse';
 import { AnswerLost, HubRefused, Unreachable, type DataSource } from './source';
+import { hasBlock, needsResult } from './exercise';
 import type { PushSubscriptionBody } from './push';
 import type { Right } from './rights';
 import type { ConfirmRequest, ContactBrief, ContactDetail, ContactFields, DataClass, DonePreview, HubHello, LearnSeries, LearnStep, MeetingBrief, MeetingDetail, Op, OpOutcome, PathBrief, PathDetail, TaskDetail, TestingRun, UploadKind, VaultView } from './types';
@@ -213,12 +214,33 @@ function initialPaths(): FakePath[] {
         { key: 'book', label: 'The Book lesen', parent: 1, link: 'https://doc.rust-lang.org/book/', note: 'Kapitel 1 bis 4', state: 'open' },
         { key: 'rustlings', label: 'Rustlings', parent: 1, state: 'open' },
         { key: 'async', label: 'Async verstehen', state: 'open', safety: true },
+        // An exercise point (LP-21): its block asks for a proof, so the engine learns it only with a result.
+        {
+          key: 'borrow',
+          label: 'Übung: Leihen',
+          state: 'open',
+          note: '**Aufgabe:** Schreibe eine Funktion, die einen `&str` leiht und **nicht** besitzt.\n**Fertig, wenn:** `cargo test` ist grün.\n**Nachweis:** Link zum Commit.\n**Ergebnis:**',
+        },
       ],
     },
   ];
 }
 
 const CLOSED = new Set(['learned', 'seen', 'dropped']);
+
+/**
+ * The note with its `**Ergebnis:**` part set to `text`, as the engine's `with_result` writes it (the fake's copy: the
+ * page itself never writes a note). The part is replaced where it stands, or added at the end.
+ */
+function withResult(note: string, text: string): string {
+  const lines = note.split('\n');
+  const at = lines.findIndex((l) => /^\s*\*\*Ergebnis:\*\*/.test(l));
+  const written = `**Ergebnis:**${text.trim() === '' ? '' : ` ${text.trim()}`}`.split('\n');
+  if (at < 0) return [...lines, ...written].join('\n');
+  let end = at + 1;
+  while (end < lines.length && !/^\s*\*\*[^*]*:\*\*/.test(lines[end]!)) end += 1;
+  return [...lines.slice(0, at), ...written, ...lines.slice(end)].join('\n');
+}
 
 /** A day `n` days from today, as the fake vault's series keeps it. */
 function nextDay(day: string): string {
@@ -355,6 +377,8 @@ export class FakeSource implements DataSource, FakeControls {
   private learnLog = initialLearnLog();
   /** Whether this fake hub has the reads of the page Lernen (a test takes them away to see the page without them). */
   learnRoutes = true;
+  /** Whether the engine of this fake hub writes the result of an exercise point (capability `node_result`). */
+  nodeResult = true;
   private gatherings = initialMeetings();
   private people = initialContacts();
   private rev = 1;
@@ -423,7 +447,11 @@ export class FakeSource implements DataSource, FakeControls {
       ...HEAD,
       kind: 'tasks.hello',
       version: 'fake',
-      engine: { ready: true, problem: null, capabilities: ['paths', 'path', ...(this.learnRoutes ? ['learn_next', 'learn_history'] : [])] },
+      engine: {
+        ready: true,
+        problem: null,
+        capabilities: ['paths', 'path', ...(this.learnRoutes ? ['learn_next', 'learn_history'] : []), ...(this.nodeResult ? ['node_result'] : [])],
+      },
     });
   }
 
@@ -876,6 +904,16 @@ export class FakeSource implements DataSource, FakeControls {
         return this.result(false, p.id, { code: 'invalid_argument', message: 'node_set: seen and dropped need a reason' });
       if (pt.safety && (op.state === 'learned' || op.state === 'seen') && op.ack !== true)
         return this.result(false, p.id, { code: 'invalid_argument', message: 'node_set: a {safety} point needs ack' });
+      // The engine writes the result first, then the state; a refused state leaves the note as it was (one call).
+      let note = pt.note;
+      if (op.result !== undefined) {
+        if (!this.nodeResult) return this.result(false, p.id, { code: 'invalid_argument', message: 'node_set: unknown field result' });
+        if (!hasBlock(note)) return this.result(false, p.id, { code: 'invalid_argument', message: 'the point has no exercise block (a note with **Aufgabe:**)' });
+        note = withResult(note!, op.result);
+      }
+      if (this.nodeResult && op.state === 'learned' && needsResult(note))
+        return this.result(false, p.id, { code: 'invalid_argument', message: 'learned needs a result: write the **Ergebnis:** line under the point (LP-04)' });
+      pt.note = note;
       const was = pt.state;
       pt.state = op.state;
       this.countToday(was, op.state);

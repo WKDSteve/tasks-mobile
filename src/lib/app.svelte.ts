@@ -13,6 +13,7 @@ import type { KeptView } from './storage';
 import { isFresh } from './storage';
 import { contactOp, type ContactForm, type ContactProblem } from './contactForm';
 import { localDay } from './today';
+import { RESULT_MAX } from './exercise';
 import type { CacheStore } from 'appkit-ui/cache';
 import type { CaptureKind, ConfirmRequest, ContactBrief, ContactDetail, DonePreview, LearnSeries, LearnStep, MeetingBrief, MeetingDetail, Op, PathBrief, PathDetail, PathPoint, PointState, Status, TaskBrief, TaskDetail, TestingRun, VaultView } from './types';
 import type { TextKey } from './i18n';
@@ -703,6 +704,14 @@ export class App {
   /** What the engine behind the hub can, as `hello` said it; null: not said (an older hub). */
   capabilities = $state<string[] | null>(null);
 
+  /**
+   * Whether the engine writes the result of an exercise point with its state (capability `node_result`): the field of
+   * the result is offered only then (a hub that does not say: not offered, its engine would refuse the field).
+   */
+  get hasResults(): boolean {
+    return this.capabilities?.includes('node_result') ?? false;
+  }
+
   /** Whether the hub has the learning paths: the page Lernen is offered only then (a hub that does not say: offered). */
   get hasPaths(): boolean {
     return this.capabilities === null || this.capabilities.includes('paths');
@@ -876,19 +885,23 @@ export class App {
 
   /**
    * Tick a point of the opened path (`node_set`, the version seen: MOB-08), or open it again. Seen and dropped need a
-   * reason (the engine refuses them without). Through the queue like every write; the path is shown again only as the
-   * hub answers (MOB-07).
+   * reason (the engine refuses them without); an exercise point is learned with its result (`result`, only where the
+   * engine takes it). Through the queue like every write; the path is shown again only as the hub answers (MOB-07).
+   * Returns whether the write was queued (false: refused on the phone, said in a notice).
    */
-  async tickPoint(point: PathPoint, state: PointState, reason?: string): Promise<void> {
+  async tickPoint(point: PathPoint, state: PointState, reason?: string, result?: string): Promise<boolean> {
     const path = this.pathView?.path;
-    if (!path) return;
+    if (!path) return false;
     const why = reason?.trim();
+    const proof = result?.trim();
     const op: Op = {
       op: 'node_set',
       id: path.id,
       point: point.key,
       state,
       ...(why ? { reason: why.slice(0, 500) } : {}),
+      // The proof of an exercise point goes with its state in one call: the engine writes it first (`node_result`).
+      ...(proof && this.hasResults ? { result: proof.slice(0, RESULT_MAX) } : {}),
       ...(path.etag ? { if_match: path.etag } : {}),
     };
     this.busy = true;
@@ -896,6 +909,7 @@ export class App {
       const item = await this.enqueue(op, path.area, `${path.title}: ${point.label}`.slice(0, 200));
       await this.readPath();
       this.sayConflict(item);
+      return item !== null;
     } finally {
       this.busy = false;
     }

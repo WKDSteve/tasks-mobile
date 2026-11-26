@@ -1,11 +1,15 @@
 <script lang="ts">
   import { tick as settled } from 'svelte';
-  import { pointReason } from '../lib/typed.svelte';
+  import { pointReason, pointResult } from '../lib/typed.svelte';
+  import { hasBlock, needsResult, parseExercise } from '../lib/exercise';
+  import PointExercise from './PointExercise.svelte';
   // One learning path: its points as a tree, each with its state and, for a point with points below it, the state of
   // its leaves (the engine's, MOB-05). A leaf is ticked here: learned at once; seen or dropped with a reason (the engine
   // takes them only with one); a closed one opened again. Each tick is one `node_set` on the version seen (MOB-08),
   // through the queue; the tree shows it once the hub answered (MOB-07). Label, note and reason are text only, hidden
-  // characters made visible (MSEC-05); a link is opened only as a web address, in a new tab without a referrer.
+  // characters made visible (MSEC-05); a link is opened only as a web address, in a new tab without a referrer. The note
+  // of an exercise point (its block: task, done when, proof) is not shown raw: a tap opens it as a sheet
+  // (PointExercise), and learning a point whose block asks for a proof goes through that sheet and its result.
   import { markHidden } from 'appkit-ui/text';
   import type { App } from '../lib/app.svelte';
   import type { Translate, TextKey } from '../lib/i18n';
@@ -32,6 +36,20 @@
     pointReason.state = state;
     pointReason.text = '';
     attempted = false;
+  }
+
+  /** The exercise point whose sheet is open (kept across screens with what was typed: typed.svelte.ts). */
+  const exercise = $derived(pointResult.open && pointResult.path === (path?.id ?? '') ? (points.find((p) => p.key === pointResult.key) ?? null) : null);
+
+  function openExercise(p: PathPoint): void {
+    if (pointResult.path !== (path?.id ?? '') || pointResult.key !== p.key) {
+      pointResult.path = path?.id ?? '';
+      pointResult.key = p.key;
+      // The result already in the plan to begin with.
+      pointResult.text = parseExercise(p.note).ergebnis ?? '';
+    }
+    pointReason.state = null;
+    pointResult.open = true;
   }
 
   async function tick(p: PathPoint, state: PointState, why?: string): Promise<void> {
@@ -68,7 +86,9 @@
             </span>
             <span class="state muted">{t(`point.${state}` as TextKey)}</span>
           </div>
-          {#if p.note}<p class="note untrusted muted">{markHidden(p.note)}</p>{/if}
+          {#if hasBlock(p.note)}
+            <p class="note"><button class="exercise-open" aria-haspopup="dialog" onclick={() => openExercise(p)} data-testid="exercise-open">{t('ex.open')}</button></p>
+          {:else if p.note}<p class="note untrusted muted">{markHidden(p.note)}</p>{/if}
           {#if p.reason}<p class="note untrusted muted">{t('point.reason')}: {markHidden(p.reason)}</p>{/if}
           {#if p.promoted}<p class="note muted" translate="no">{t('point.promoted', { id: p.promoted })}</p>{/if}
           {#if canTick && p.children === 0 && !p.promoted}
@@ -76,7 +96,8 @@
               {#if CLOSED.has(p.state)}
                 <button disabled={app.busy} onclick={() => void tick(p, 'open')}>{t('point.reopen')}</button>
               {:else}
-                <button class="primary" disabled={app.busy} onclick={() => void tick(p, 'learned')}>{t('point.learned')}</button>
+                <!-- A point whose block asks for a proof is learned with its result: through the sheet. -->
+                <button class="primary" disabled={app.busy} onclick={() => (needsResult(p.note) ? openExercise(p) : void tick(p, 'learned'))}>{t('point.learned')}</button>
                 <button disabled={app.busy} onclick={() => ask(p, 'seen')}>{t('point.seen')}</button>
                 <button disabled={app.busy} onclick={() => ask(p, 'dropped')}>{t('point.dropped')}</button>
               {/if}
@@ -108,6 +129,7 @@
         </li>
       {/each}
     </ul>
+    {#if exercise}<PointExercise {app} {t} point={exercise} />{/if}
   {/if}
 {/if}
 

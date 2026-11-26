@@ -14,6 +14,17 @@ export const pointReason = $state<{ path: string; key: string; state: 'seen' | '
   text: '',
 });
 
+/**
+ * The result being typed for the exercise of one point of one path (its proof), and whether its sheet is open: closed
+ * by a close request or left for another screen, the text is still there when the sheet is opened again.
+ */
+export const pointResult = $state<{ path: string; key: string; open: boolean; text: string }>({
+  path: '',
+  key: '',
+  open: false,
+  text: '',
+});
+
 /** The text typed for the minutes of `meeting` (empty for another meeting than the one typed for). */
 export function lineFor(meeting: string): string {
   return minutesLine.meeting === meeting ? minutesLine.text : '';
