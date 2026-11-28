@@ -1,7 +1,7 @@
 <script lang="ts">
   import { dateTimeText } from '../lib/format';
   // Whether the phone speaks to the hub right now, and how old what it shows is (MUI-05); and that it shows a part of
-  // the vault when areas stay on the PC (MUI-06).
+  // the vault when areas stay on the PC (MUI-06). A hub with too many logins at once (429) is said as such, not as offline.
   import type { App } from '../lib/app.svelte';
   import type { Translate } from '../lib/i18n';
 
@@ -10,13 +10,16 @@
   const at = $derived(app.viewAt ? dateTimeText(new Date(app.viewAt).getTime()) : null);
 </script>
 
-<div class="bar" data-testid="connection" data-state={app.connection}>
+<div class="bar" data-testid="connection" data-state={app.connection === 'offline' && app.loginBusy ? 'busy' : app.connection}>
   {#if app.fromFile && at}
     <span class="muted" data-testid="from-file">▤ {t('conn.file', { at })}</span>
   {:else if app.connection === 'live'}
     <span class="ok">● {t('conn.live')}</span>
   {:else if app.connection === 'checking'}
     <span class="muted">◌ {t('conn.checking')}</span>
+  {:else if app.loginBusy}
+    <!-- the hub is there, it refused the login for now (429): not "offline", and the page asks again by itself -->
+    <span class="muted" data-testid="login-busy">◌ {at ? t('conn.busy', { at }) : t('conn.busy_none')}</span>
   {:else if at}
     <span class="bad">○ {t('conn.offline', { at })}</span>
   {:else}

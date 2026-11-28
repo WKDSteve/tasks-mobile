@@ -1,9 +1,10 @@
 import { mount } from 'svelte';
 import { ApiError, HubClient } from 'appkit-ui/client';
-import { canConfirm, confirmHeader, deviceLogin, indexedDbDeviceStore, pairDevice, type DeviceDeps } from 'appkit-ui/device';
+import { canConfirm, confirmHeader, indexedDbDeviceStore, pairDevice, type DeviceDeps } from 'appkit-ui/device';
 import { takePairingCode } from 'appkit-ui/pair';
 import App from './App.svelte';
 import { App as AppState, type AppDeps, type DeviceAccess } from './lib/app.svelte';
+import { loginAt } from './lib/device';
 import { indexedDbFileStore, memoryFileStore } from './lib/attach';
 import { HubSource } from './lib/hubSource';
 import { browserPush, meetingFromAddress, taskFromAddress, withoutTask } from './lib/push';
@@ -36,7 +37,7 @@ function deviceAccess(db: IDBFactory | undefined): DeviceAccess {
         throw error;
       }
     },
-    login: () => deviceLogin(deps),
+    login: () => loginAt(deps),
     forget: () => store.clear(),
     confirm: (method, path, body) => confirmHeader(deps, method, path, body),
     canConfirm: () => canConfirm(store),

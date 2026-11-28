@@ -67,7 +67,7 @@ export const MEETING_DAYS = 14;
 export const PUSH_READ_MS = 2_000;
 
 /** What a start finds at the hub for this device. */
-export type DeviceLogin = { kind: 'session'; token: string } | { kind: 'unpaired' } | { kind: 'refused' };
+export type DeviceLogin = { kind: 'session'; token: string } | { kind: 'unpaired' } | { kind: 'refused' } | { kind: 'busy' };
 
 export interface DeviceAccess {
   /** Pair with a one-time code under a name; a first session token. */
@@ -139,6 +139,11 @@ export class App {
   /** Counts the writes of the task page the PC refused as a conflict: the page sets its choices back to the new state. */
   conflicts = $state(0);
   busy = $state(false);
+  /**
+   * The hub is there but refused the login for now (429: too many logins at once, e.g. several devices starting
+   * together). The page is offline in all it allows, says so, and tries again by itself (`planRetry`).
+   */
+  loginBusy = $state(false);
   /**
    * What is shown came from an export file (`tasks-hub phone export`), not from the hub: read only. Creating and
    * changing need the hub; the page says so instead of queueing. The next answer of the hub takes its place.
@@ -242,13 +247,21 @@ export class App {
   /**
    * A session for the device kept on this phone, without a code. False when there is none: no device (the pairing
    * screen), a device the hub refused (revoked: the pairing screen, and said so), or no hub to ask (offline, with
-   * the kept list; the next refresh asks again).
+   * the kept list; the next refresh asks again), or a hub with too many logins right now (`loginBusy`, asked again
+   * the same way).
    */
   private async login(): Promise<boolean> {
     let result: DeviceLogin;
     try {
       result = await this.deps.device.login();
     } catch {
+      this.connection = 'offline';
+      this.loginPending = true;
+      this.loginBusy = false;
+      return false;
+    }
+    this.loginBusy = result.kind === 'busy';
+    if (result.kind === 'busy') {
       this.connection = 'offline';
       this.loginPending = true;
       return false;
@@ -271,6 +284,7 @@ export class App {
   private loginPending = false;
 
   private connect(token: string | null): void {
+    this.loginBusy = false;
     this.token = token;
     this.source = this.deps.source(token);
   }
@@ -412,7 +426,8 @@ export class App {
       const report = await this.queue.flush(source);
       if (report.stopped === 'unpaired') {
         if (retry && (await this.renew())) return this.load(false);
-        if (this.screen !== 'pair') this.unpaired();
+        // No hub to ask, or one with too many logins right now: the device is kept and asked again (`planRetry`).
+        if (this.screen !== 'pair' && !this.loginPending) this.unpaired();
         return;
       }
       const view = await source.vault();
@@ -429,7 +444,8 @@ export class App {
     } catch (error) {
       if (error instanceof Unpaired) {
         if (retry && (await this.renew())) return this.load(false);
-        if (this.screen !== 'pair') this.unpaired();
+        // No hub to ask, or one with too many logins right now: the device is kept and asked again (`planRetry`).
+        if (this.screen !== 'pair' && !this.loginPending) this.unpaired();
         return;
       }
       this.failed(error);
@@ -1263,6 +1279,9 @@ export class App {
     this.confirmable = false;
     this.detail = null;
     this.opened = null;
+    // No device left to log in: no login waits, and a busy hub is no longer this phone's concern.
+    this.loginPending = false;
+    this.loginBusy = false;
     this.connection = 'offline';
     this.screen = this.deps.fake ? 'today' : 'pair';
   }

@@ -7,6 +7,8 @@ import { memoryStore } from './storage';
 import type { KeptView } from './storage';
 import { HubRefused, Unpaired, Unreachable, type DataSource } from './source';
 import type { PushAccess } from './push';
+import type { DeviceRecord } from 'appkit-ui/device';
+import { loginAt } from './device';
 
 const GOOD_CODE = 'b'.repeat(32);
 
@@ -15,6 +17,8 @@ interface FakeDevice extends DeviceAccess {
   paired: boolean;
   revoked: boolean;
   offline: boolean;
+  /** The hub has too many logins right now (429). */
+  busy: boolean;
   logins: number;
   names: string[];
 }
@@ -24,6 +28,7 @@ function fakeDevice(paired = false): FakeDevice {
     paired,
     revoked: false,
     offline: false,
+    busy: false,
     logins: 0,
     names: [],
     async pair(code, name) {
@@ -34,6 +39,7 @@ function fakeDevice(paired = false): FakeDevice {
     },
     async login(): Promise<DeviceLogin> {
       if (d.offline) throw new TypeError('Failed to fetch');
+      if (d.busy) return { kind: 'busy' };
       d.logins += 1;
       if (!d.paired) return { kind: 'unpaired' };
       if (d.revoked) {
@@ -952,6 +958,76 @@ describe('tries again while offline in front', () => {
     device.offline = false;
     await clock.fire(app);
     expect(app.connection).toBe('live');
+  });
+
+  it('a hub with too many logins at the start (429 on the challenge) is said as such, and asked again by itself', async () => {
+    const fake = new FakeSource();
+    const clock = manualTimer();
+    const device = fakeDevice(true);
+    // The first login goes through appkit-ui/device to a hub that answers the challenge with 429.
+    const real = device.login;
+    const asked: string[] = [];
+    const hub = {
+      fetchFn: (async (input: RequestInfo | URL) => {
+        asked.push(String(input));
+        return new Response(JSON.stringify({ error: { code: 'rate_limited', message: 'too many attempts' } }), { status: 429 });
+      }) as typeof fetch,
+      subtle: globalThis.crypto.subtle,
+      store: { load: async () => ({ id: 'd'.repeat(32), keys: {} as CryptoKeyPair }) as DeviceRecord, save: async () => undefined, clear: async () => undefined },
+      origin: 'https://phone.test',
+    };
+    device.login = () => (asked.length === 0 ? loginAt(hub) : real());
+    const d = deps(fake, { fake: false, device, source: sourceFor(fake, new Set()), timer: clock.timer, visible: () => true });
+    d.views.value = { at: '2025-12-31T00:00:00Z', view: { rev: 'r', tasks: [], areas: [{ name: 'garden', dataClass: 'public' }], hiddenAreas: 0, counts: {}, next: [] } };
+    const app = new App(d);
+    await app.start(null);
+    expect(asked).toEqual(['/auth/device/challenge']);
+    expect(app.screen).toBe('today');
+    expect(app.connection).toBe('offline');
+    expect(app.loginBusy).toBe(true);
+    expect(app.notice).toBeNull();
+    expect(app.view?.areas).toHaveLength(1);
+    expect(app.canRetry).toBe(true);
+    expect(clock.set).toHaveLength(1);
+    await clock.fire(app);
+    expect(app.connection).toBe('live');
+    expect(app.loginBusy).toBe(false);
+  });
+
+  it('a hub that restarted and then has too many logins keeps the phone off the pairing screen, and asks again', async () => {
+    const fake = new FakeSource();
+    const clock = manualTimer();
+    const device = fakeDevice(true);
+    const dead = new Set<string | null>();
+    const app = new App(deps(fake, { fake: false, device, source: sourceFor(fake, dead), timer: clock.timer, visible: () => true }));
+    await app.start(null);
+    expect(app.connection).toBe('live');
+    dead.add(String(device.logins).padStart(64, '0'));
+    device.busy = true;
+    await app.refresh();
+    expect(app.screen).toBe('today');
+    expect(app.connection).toBe('offline');
+    expect(app.loginBusy).toBe(true);
+    expect(app.notice).toBeNull();
+    expect(clock.set).toHaveLength(1);
+    device.busy = false;
+    await clock.fire(app);
+    expect(app.connection).toBe('live');
+    expect(app.loginBusy).toBe(false);
+  });
+
+  it('a phone disconnected while the hub had too many logins neither says so nor tries again', async () => {
+    const fake = new FakeSource();
+    const clock = manualTimer();
+    const device = fakeDevice(true);
+    device.busy = true;
+    const app = new App(deps(fake, { fake: false, device, source: sourceFor(fake, new Set()), timer: clock.timer, visible: () => true }));
+    await app.start(null);
+    expect(app.loginBusy).toBe(true);
+    await app.forget();
+    expect(app.screen).toBe('pair');
+    expect(app.loginBusy).toBe(false);
+    expect(app.canRetry).toBe(false);
   });
 
   it('no tries on the pairing screen', async () => {
