@@ -35,6 +35,17 @@ export class HubRefused extends Error {
 }
 
 /**
+ * The hub is there but takes no more pairings or logins right now (429: appkit allows 10 a minute for all devices
+ * together). Not a refusal of this code or device: the same step works again a minute later.
+ */
+export class HubBusy extends Error {
+  constructor() {
+    super('the hub has too many pairings and logins right now');
+    this.name = 'HubBusy';
+  }
+}
+
+/**
  * A write went out but no answer came back: the hub may have written it or not. The page never sends such a write
  * again by itself (a second `new` would make a second task); the user decides (MOB-07, MOB-09).
  */

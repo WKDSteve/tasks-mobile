@@ -7,7 +7,7 @@ import { ExportClassError, MAX_EXPORT_BYTES, phoneExport, ShapeError } from './p
 import { PUSH_KINDS, type PushAccess, type PushState } from './push';
 import { filesOf, WriteQueue, type Pending, type QueueStore } from './queue';
 import { allows, DEFAULT_RIGHTS, rightsOf, type Right } from './rights';
-import { AnswerLost, HubRefused, Unpaired, Unreachable, type DataSource } from './source';
+import { AnswerLost, HubBusy, HubRefused, Unpaired, Unreachable, type DataSource } from './source';
 import { parsePeriod, periodFrame, type LearnPeriod, type PeriodFrame } from './learn';
 import type { KeptView } from './storage';
 import { isFresh } from './storage';
@@ -251,15 +251,19 @@ export class App {
    * the same way).
    */
   private async login(): Promise<boolean> {
+    const epoch = this.deviceEpoch;
     let result: DeviceLogin;
     try {
       result = await this.deps.device.login();
     } catch {
+      if (epoch !== this.deviceEpoch) return false;
       this.connection = 'offline';
       this.loginPending = true;
       this.loginBusy = false;
       return false;
     }
+    // The device was forgotten while its login was under way: what the login found is about a device that is gone.
+    if (epoch !== this.deviceEpoch) return false;
     this.loginBusy = result.kind === 'busy';
     if (result.kind === 'busy') {
       this.connection = 'offline';
@@ -282,6 +286,9 @@ export class App {
 
   /** The device is kept but no session was opened yet (the hub was not reached at the start). */
   private loginPending = false;
+
+  /** Counts the forgets of the device: a login that began before one has nothing to say after it. */
+  private deviceEpoch = 0;
 
   private connect(token: string | null): void {
     this.loginBusy = false;
@@ -306,7 +313,8 @@ export class App {
       return true;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      this.notice = { key: 'pair.failed', params: { message }, tone: 'error' };
+      // A busy hub did not refuse the code: the person tries the same code again in a minute.
+      this.notice = error instanceof HubBusy ? { key: 'pair.busy', tone: 'error' } : { key: 'pair.failed', params: { message }, tone: 'error' };
       this.screen = 'pair';
       return false;
     }
@@ -1260,6 +1268,7 @@ export class App {
 
   /** Unpair this phone: the session, the copy, the queue and the notices go (MSEC-12). */
   async forget(): Promise<void> {
+    this.deviceEpoch += 1;
     if (this.pushState === 'on') await this.disablePush(false);
     await this.deps.device.forget();
     if (this.notice?.op !== undefined) this.notice = null;

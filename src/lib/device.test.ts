@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { DeviceDeps, DeviceRecord } from 'appkit-ui/device';
-import { loginAt } from './device';
+import { loginAt, pairAt } from './device';
+import { HubBusy } from './source';
 
 const DEVICE = 'd'.repeat(32);
 
@@ -40,6 +41,21 @@ describe('the login of this device', () => {
 
   it('other refusals of the challenge stay errors', async () => {
     await expect(loginAt(hubAnswering(500).deps)).rejects.toMatchObject({ status: 500 });
+  });
+
+  it('a 429 on pairing is a busy hub, and nothing is kept', async () => {
+    const hub = hubAnswering(429);
+    let saved = false;
+    hub.deps.store.save = async () => {
+      saved = true;
+    };
+    await expect(pairAt(hub.deps, 'c'.repeat(32), 'Phone')).rejects.toBeInstanceOf(HubBusy);
+    expect(hub.asked).toEqual(['/auth/device/pair']);
+    expect(saved).toBe(false);
+  });
+
+  it('other refusals of pairing stay the error of the hub', async () => {
+    await expect(pairAt(hubAnswering(404).deps, 'c'.repeat(32), 'Phone')).rejects.toMatchObject({ status: 404 });
   });
 
   it('no hub at all stays an error (the page is offline)', async () => {

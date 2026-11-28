@@ -5,7 +5,7 @@ import { memoryFileStore } from './attach';
 import { restoreDraft, type KeptDraft } from './capture';
 import { memoryStore } from './storage';
 import type { KeptView } from './storage';
-import { HubRefused, Unpaired, Unreachable, type DataSource } from './source';
+import { HubBusy, HubRefused, Unpaired, Unreachable, type DataSource } from './source';
 import type { PushAccess } from './push';
 import type { DeviceRecord } from 'appkit-ui/device';
 import { loginAt } from './device';
@@ -817,6 +817,17 @@ describe('pairing', () => {
     expect(app.notice).toMatchObject({ key: 'pair.revoked' });
   });
 
+  it('says that the hub has too many logins when pairing gets 429, not that the code was refused', async () => {
+    const device = fakeDevice();
+    device.pair = async () => {
+      throw new HubBusy();
+    };
+    const app = new App(deps(new FakeSource(), { fake: false, device }));
+    await app.start(GOOD_CODE);
+    expect(app.screen).toBe('pair');
+    expect(app.notice).toMatchObject({ key: 'pair.busy', tone: 'error' });
+  });
+
   it('says that a code was refused', async () => {
     const app = new App(deps(new FakeSource(), { fake: false, device: fakeDevice() }));
     await app.start('c'.repeat(32));
@@ -1028,6 +1039,26 @@ describe('tries again while offline in front', () => {
     expect(app.screen).toBe('pair');
     expect(app.loginBusy).toBe(false);
     expect(app.canRetry).toBe(false);
+  });
+
+  it('a device forgotten while its login was under way is not brought back by the answer of that login', async () => {
+    const fake = new FakeSource();
+    const clock = manualTimer();
+    const device = fakeDevice(true);
+    device.offline = true;
+    const app = new App(deps(fake, { fake: false, device, source: sourceFor(fake, new Set()), timer: clock.timer, visible: () => true }));
+    await app.start(null);
+    // The next try asks the hub; its answer (too many logins) comes only after the person disconnected the phone.
+    let answer: (login: DeviceLogin) => void = () => undefined;
+    device.login = () => new Promise<DeviceLogin>((resolve) => (answer = resolve));
+    const run = app.refresh();
+    await app.forget();
+    answer({ kind: 'busy' });
+    await run;
+    expect(app.screen).toBe('pair');
+    expect(app.loginBusy).toBe(false);
+    expect(app.canRetry).toBe(false);
+    expect(clock.set).toHaveLength(0);
   });
 
   it('no tries on the pairing screen', async () => {

@@ -1,10 +1,10 @@
 import { mount } from 'svelte';
 import { ApiError, HubClient } from 'appkit-ui/client';
-import { canConfirm, confirmHeader, indexedDbDeviceStore, pairDevice, type DeviceDeps } from 'appkit-ui/device';
+import { canConfirm, confirmHeader, indexedDbDeviceStore, type DeviceDeps } from 'appkit-ui/device';
 import { takePairingCode } from 'appkit-ui/pair';
 import App from './App.svelte';
 import { App as AppState, type AppDeps, type DeviceAccess } from './lib/app.svelte';
-import { loginAt } from './lib/device';
+import { loginAt, pairAt } from './lib/device';
 import { indexedDbFileStore, memoryFileStore } from './lib/attach';
 import { HubSource } from './lib/hubSource';
 import { browserPush, meetingFromAddress, taskFromAddress, withoutTask } from './lib/push';
@@ -29,7 +29,7 @@ function deviceAccess(db: IDBFactory | undefined): DeviceAccess {
   return {
     pair: async (code, name) => {
       try {
-        return await pairDevice(deps, code, name);
+        return await pairAt(deps, code, name);
       } catch (error) {
         if (error instanceof ApiError && error.status === 404) {
           return new HubClient(window.fetch.bind(window), '/api/tasks').exchange(code);
